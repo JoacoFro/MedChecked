@@ -1,0 +1,137 @@
+{% extends 'medicine_control/base.html' %}
+
+{% block contenido %}
+
+<div class="row g-3 mb-4">
+    <div class="col">
+        <div class="custom-card shadow text-center p-3 h-100">
+            <span class="text-secondary small text-uppercase">Total Global</span>
+            <h3 class="fw-bold mt-2 text-info">{{ total_unidades }}</h3>
+            <small class="text-secondary">Unidades</small>
+        </div>
+    </div>
+
+    <div class="col">
+        <div class="custom-card shadow text-center p-3 h-100">
+            <span class="text-secondary small text-uppercase">Total Cajas</span>
+            <h3 class="fw-bold mt-2 text-white">{{ total_cajas }}</h3>
+            <small class="text-secondary">En stock</small>
+        </div>
+    </div>
+
+    <div class="col">
+        <div class="custom-card shadow p-3 h-100" style="border: 1px solid rgba(0, 242, 255, 0.3); background: rgba(13, 110, 253, 0.08); position: relative; display: flex; flex-direction: column; justify-content: center;">
+            <div style="position: absolute; left: 15px; top: 50%; transform: translateY(-45%);">
+                <i class="bi bi-shield-shaded" style="font-size: 2.8rem; color: #00f2ff; text-shadow: 0 0 15px #00f2ff;"></i>
+            </div>
+            <div class="text-center w-100">
+                <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Stock de Seguridad</span>
+                <h3 class="fw-bold mt-2 mb-0" style="color: #00f2ff; text-shadow: 0 0 10px rgba(0, 242, 255, 0.5); line-height: 1.1;">
+                    {{ total_backup }}
+                </h3>
+                <small class="text-info opacity-75 fw-bold" style="font-size: 0.75rem;">Reserva</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col">
+        <div class="custom-card shadow text-center p-3 h-100">
+            <span class="text-secondary small text-uppercase">Autonomía</span>
+            <h3 class="fw-bold mt-2 {% if autonomia < 5 %}text-danger{% else %}text-success{% endif %}">
+                {{ autonomia }}
+            </h3>
+            <small class="text-secondary">Días libres</small>
+        </div>
+    </div>
+
+    <div class="col">
+        <div class="custom-card shadow text-center p-3 h-100">
+            <span class="text-secondary small text-uppercase">Consumo</span>
+            <h3 class="fw-bold mt-2 text-warning">{{ consumo_diario }}</h3>
+            <small class="text-secondary">Sondas / día</small>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="custom-card shadow p-4">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-secondary fw-bold text-uppercase small" style="letter-spacing: 1px;">Estado de Stock (Pack 300)</span>
+                <span class="text-info fw-bold">{{ porcentaje_general|floatformat:0 }}%</span>
+            </div>
+            <div class="progress" style="height: 12px; background-color: rgba(255,255,255,0.05); border-radius: 20px;">
+                <div class="progress-bar" role="progressbar" 
+                     style="width: {{ porcentaje_general }}%; 
+                            background: linear-gradient(90deg, #0d6efd 0%, #0dcaf0 100%);
+                            box-shadow: 0 0 20px rgba(13, 202, 240, 0.6);
+                            border-radius: 20px;">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="custom-card shadow">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4 class="fw-bold mb-0" style="color: #0dcaf0;">Registro de Ingresos</h4>
+                <a href="{% url 'cargar' %}" class="btn btn-sm btn-outline-info">+ Cargar Stock</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-dark table-hover mt-3">
+                    <thead>
+                        <tr class="text-secondary small">
+                            <th>INSUMO</th>
+                            <th class="text-center">CANTIDAD (CAJAS)</th>
+                            <th class="text-center">TOTAL UNIDADES</th>
+                            <th class="text-center">ORIGEN / LUGAR</th>
+                            <th>FECHA LLEGADA</th>
+                            <th class="text-end">ESTADO</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ingreso in ingresos %}
+                        <tr>
+                            <td class="fw-bold text-info" style="vertical-align: middle;">
+                                {{ ingreso.insumo.nombre }}
+                            </td>
+
+                            <td class="text-center fw-bold" style="vertical-align: middle;">
+                                {% if ingreso.tipo == 'normal' %}
+                                    + 10
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+
+                            <td class="text-center text-secondary" style="vertical-align: middle;">
+                                {{ ingreso.cantidad }} uds
+                            </td>
+
+                            <td class="text-center small" style="vertical-align: middle;">
+                                {{ ingreso.lugar_compra }}
+                            </td>
+
+                            <td class="text-secondary small" style="vertical-align: middle;">
+                                {{ ingreso.fecha|date:"d/m/Y" }}
+                            </td>
+
+                            <td class="text-end" style="vertical-align: middle;">
+                                <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">Recibido</span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-secondary py-4">No hay registros de ingresos recientes.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

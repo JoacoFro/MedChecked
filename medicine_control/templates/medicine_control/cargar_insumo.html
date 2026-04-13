@@ -1,0 +1,58 @@
+{% extends 'medicine_control/base.html' %}
+
+{% block contenido %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="custom-card shadow p-4">
+            <h3 class="fw-bold mb-4 text-info text-center">Registrar Ingreso</h3>
+            
+            <form method="POST">
+                {% csrf_token %}
+                
+                <div class="mb-3">
+                    <label class="text-secondary small">Tipo de Pedido</label>
+                    <select name="tipo_pedido" id="tipo_pedido" class="form-select bg-dark text-white border-secondary">
+                        <option value="normal">📦 Pedido Normal (Obra Social - 300 uds)</option>
+                        <option value="propio">🛒 Pedido por cuenta propia</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="text-secondary small"> Fecha del Pedido</label>
+                    <input type="date" name="fecha" class="form-control bg-dark text-white border-secondary" required>
+                </div>
+
+                <div id="div_cantidad" class="mb-3" style="display: none;">
+                    <label class="text-secondary small">Cantidad de Sondas (Unidades)</label>
+                    <input type="number" name="cantidad" id="cantidad" class="form-control bg-dark text-white border-secondary" placeholder="Ej: 100">
+                </div>
+
+                <div id="div_lugar" class="mb-4" style="display: none;">
+                    <label class="text-secondary small"> ¿Dónde lo compraste?</label>
+                    <input type="text" name="lugar_compra" id="lugar_compra" class="form-control bg-dark text-white border-secondary" placeholder="Ej: Farmacia Central">
+                </div>
+
+                <button type="submit" class="btn btn-info w-100 fw-bold py-2">Guardar Ingreso</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('tipo_pedido').addEventListener('change', function() {
+        const divCantidad = document.getElementById('div_cantidad');
+        const divLugar = document.getElementById('div_lugar');
+        const inputLugar = document.getElementById('lugar_compra'); // El ID de tu input
+        
+        if (this.value === 'propio') {
+            divCantidad.style.display = 'block';
+            divLugar.style.display = 'block';
+        } else {
+            divCantidad.style.display = 'none';
+            divLugar.style.display = 'none';
+            // Limpiamos el valor por si el usuario escribió algo y luego cambió de opinión
+            if (inputLugar) inputLugar.value = ''; 
+        }
+    });
+</script>
+{% endblock %}
