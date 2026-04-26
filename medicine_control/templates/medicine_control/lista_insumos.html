@@ -10,7 +10,6 @@
             <small class="text-secondary">Unidades</small>
         </div>
     </div>
-
     <div class="col">
         <div class="custom-card shadow text-center p-3 h-100">
             <span class="text-secondary small text-uppercase">Total Cajas</span>
@@ -18,14 +17,13 @@
             <small class="text-secondary">En stock</small>
         </div>
     </div>
-
     <div class="col">
         <div class="custom-card shadow p-3 h-100" style="border: 1px solid rgba(0, 242, 255, 0.3); background: rgba(13, 110, 253, 0.08); position: relative; display: flex; flex-direction: column; justify-content: center;">
             <div style="position: absolute; left: 15px; top: 50%; transform: translateY(-45%);">
                 <i class="bi bi-shield-shaded" style="font-size: 2.8rem; color: #00f2ff; text-shadow: 0 0 15px #00f2ff;"></i>
             </div>
             <div class="text-center w-100">
-                <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Stock de Seguridad</span>
+                <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Sondas Sueltas</span>
                 <h3 class="fw-bold mt-2 mb-0" style="color: #00f2ff; text-shadow: 0 0 10px rgba(0, 242, 255, 0.5); line-height: 1.1;">
                     {{ total_backup }}
                 </h3>
@@ -33,22 +31,44 @@
             </div>
         </div>
     </div>
-
     <div class="col">
         <div class="custom-card shadow text-center p-3 h-100">
             <span class="text-secondary small text-uppercase">Autonomía</span>
-            <h3 class="fw-bold mt-2 {% if autonomia < 5 %}text-danger{% else %}text-success{% endif %}">
+            <h3 class="fw-bold mt-2 {% if autonomia < 10 %}text-danger{% elif autonomia < 20 %}text-warning{% else %}text-success{% endif %}">
                 {{ autonomia }}
             </h3>
             <small class="text-secondary">Días libres</small>
         </div>
     </div>
-
     <div class="col">
         <div class="custom-card shadow text-center p-3 h-100">
-            <span class="text-secondary small text-uppercase">Consumo</span>
-            <h3 class="fw-bold mt-2 text-warning">{{ consumo_diario }}</h3>
+            <span class="text-secondary small text-uppercase">Consumo IA</span>
+            <h3 class="fw-bold mt-2 text-warning">{{ consumo_diario|floatformat:1 }}</h3>
             <small class="text-secondary">Sondas / día</small>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="custom-card shadow p-3" style="background: rgba(13, 110, 253, 0.05); border: 1px dashed rgba(13, 202, 240, 0.3);">
+            <div class="d-flex align-items-center">
+                <div class="me-3">
+                    <i class="bi bi-robot" style="font-size: 2rem; color: #0dcaf0;"></i>
+                </div>
+                <div>
+                    <h6 class="mb-1 fw-bold text-white">Análisis de MedicineStock IA</h6>
+                    <p class="mb-0 text-secondary small">
+                        {% if autonomia < 10 %}
+                            <span class="text-danger fw-bold">⚠️ CRÍTICO:</span> Tu stock caerá a cero en menos de 10 días. Gestionar pedido urgente.
+                        {% elif autonomia < 20 %}
+                            <span class="text-warning fw-bold">⚡ ATENCIÓN:</span> Consumo estable, pero la ventana de pedido se cierra pronto.
+                        {% else %}
+                            <span class="text-success fw-bold">✅ ÓPTIMO:</span> Tienes suministros suficientes para operar con tranquilidad.
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -57,22 +77,23 @@
     <div class="col-12">
         <div class="custom-card shadow p-4">
             <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="text-secondary fw-bold text-uppercase small" style="letter-spacing: 1px;">Estado de Stock (Pack 300)</span>
-                <span class="text-info fw-bold">{{ porcentaje_general|floatformat:0 }}%</span>
+                <span class="text-secondary fw-bold text-uppercase small" style="letter-spacing: 1px;">Estado de Stock (Escala: 400 uds)</span>
+                <span class="text-info fw-bold">{{ porcentaje|floatformat:0 }}%</span>
             </div>
             <div class="progress" style="height: 12px; background-color: rgba(255,255,255,0.05); border-radius: 20px;">
-                <div class="progress-bar" role="progressbar" 
-                     style="width: {{ porcentaje_general }}%; 
+                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" 
+                     style="width: {{ porcentaje }}%; 
                             background: linear-gradient(90deg, #0d6efd 0%, #0dcaf0 100%);
                             box-shadow: 0 0 20px rgba(13, 202, 240, 0.6);
-                            border-radius: 20px;">
+                            border-radius: 20px;
+                            transition: width 1.5s ease-in-out;">
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<div class="row">
+<div class="row mb-5">
     <div class="col-12">
         <div class="custom-card shadow">
             <div class="d-flex justify-content-between align-items-center mb-4">
@@ -85,7 +106,8 @@
                         <tr class="text-secondary small">
                             <th>INSUMO</th>
                             <th class="text-center">CANTIDAD (CAJAS)</th>
-                            <th class="text-center">TOTAL UNIDADES</th>
+                            <th class="text-center">UNIDADES</th>
+                            <th class="text-center">TIPO DE STOCK</th> 
                             <th class="text-center">ORIGEN / LUGAR</th>
                             <th>FECHA LLEGADA</th>
                             <th class="text-end">ESTADO</th>
@@ -94,38 +116,95 @@
                     <tbody>
                         {% for ingreso in ingresos %}
                         <tr>
-                            <td class="fw-bold text-info" style="vertical-align: middle;">
-                                {{ ingreso.insumo.nombre }}
-                            </td>
-
+                            <td class="fw-bold text-info" style="vertical-align: middle;">{{ ingreso.insumo.nombre }}</td>
                             <td class="text-center fw-bold" style="vertical-align: middle;">
-                                {% if ingreso.tipo == 'normal' %}
-                                    + 10
+                                {% if ingreso.tipo_stock == 'stock_normal' %} + {{ ingreso.cantidad }} {% else %} <span class="text-secondary">-</span> {% endif %}
+                            </td>
+                            <td class="text-center text-secondary" style="vertical-align: middle;">{{ ingreso.cantidad }} uds</td>
+                            <td class="text-center" style="vertical-align: middle;">
+                                {% if ingreso.tipo_stock == 'stock_normal' %}
+                                    <span style="color: rgba(255,255,255,0.5); font-size: 0.75rem; border: 1px solid rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 5px;">NORMAL</span>
                                 {% else %}
-                                    -
+                                    <div class="d-flex justify-content-center align-items-center">
+                                        <div style="width: 28px; height: 28px; background: rgba(0, 242, 255, 0.1); border: 1px solid #00f2ff; border-radius: 6px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 8px rgba(0, 242, 255, 0.3);">
+                                            <i class="bi bi-shield-shaded" style="color: #00f2ff; font-size: 0.9rem;"></i>
+                                        </div>
+                                    </div>
                                 {% endif %}
                             </td>
-
-                            <td class="text-center text-secondary" style="vertical-align: middle;">
-                                {{ ingreso.cantidad }} uds
-                            </td>
-
-                            <td class="text-center small" style="vertical-align: middle;">
-                                {{ ingreso.lugar_compra }}
-                            </td>
-
-                            <td class="text-secondary small" style="vertical-align: middle;">
-                                {{ ingreso.fecha|date:"d/m/Y" }}
-                            </td>
-
+                            <td class="text-center small" style="vertical-align: middle;">{{ ingreso.lugar_compra }}</td>
+                            <td class="text-secondary small" style="vertical-align: middle;">{{ ingreso.fecha|date:"d/m/Y" }}</td>
                             <td class="text-end" style="vertical-align: middle;">
                                 <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">Recibido</span>
                             </td>
                         </tr>
                         {% empty %}
-                        <tr>
-                            <td colspan="6" class="text-center text-secondary py-4">No hay registros de ingresos recientes.</td>
+                        <tr><td colspan="7" class="text-center text-secondary py-4">No hay registros de ingresos recientes.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="custom-card shadow">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4 class="fw-bold mb-0" style="color: #fbbf24;">Registro de Salidas</h4>
+                <a href="{% url 'salida_stock' %}" class="btn btn-sm btn-outline-warning">+ Registrar Salida</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-dark table-hover mt-3">
+                    <thead>
+                        <tr class="text-secondary small">
+                            <th>INSUMO</th>
+                            <th class="text-center">CANTIDAD (CAJAS)</th>
+                            <th class="text-center">UNIDADES</th>
+                            <th class="text-center">TIPO STOCK</th>
+                            <th>FECHA Y HORA</th>
+                            <th class="text-end">DIAGNÓSTICO IA</th>
                         </tr>
+                    </thead>
+                    <tbody>
+                        {% for salida in salidas %}
+                        <tr>
+                            <td class="fw-bold text-warning" style="vertical-align: middle;">{{ salida.insumo.nombre }}</td>
+                            <td class="text-center fw-bold" style="vertical-align: middle;">
+                                {% if salida.tipo_stock == 'stock_normal' %}
+                                    <span class="text-white">- {{ salida.cantidad_cajas }}</span>
+                                {% else %}
+                                    <span class="text-secondary opacity-50" style="font-size: 0.8rem;">Sueltas</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center fw-bold text-white" style="vertical-align: middle;">
+                                <span class="text-danger">-</span> {{ salida.cantidad }} uds
+                            </td>
+                            <td class="text-center" style="vertical-align: middle;">
+                                {% if salida.tipo_stock == 'stock_normal' %}
+                                    <span style="color: rgba(255,255,255,0.5); font-size: 0.75rem; border: 1px solid rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 5px; letter-spacing: 1px;">NORMAL</span>
+                                {% else %}
+                                    <div class="d-flex justify-content-center align-items-center">
+                                        <div title="Stock de Seguridad" style="width: 28px; height: 28px; background: rgba(251, 191, 36, 0.1); border: 1px solid #fbbf24; border-radius: 6px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);">
+                                            <i class="bi bi-shield-shaded" style="color: #fbbf24; font-size: 0.9rem;"></i>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            </td>
+                            <td class="text-secondary small" style="vertical-align: middle;">
+                                {{ salida.fecha|date:"d/m/Y" }} <span class="opacity-50">{{ salida.fecha|date:"H:i" }}</span>
+                            </td>
+                            <td class="text-end" style="vertical-align: middle;">
+                                {% if salida.cantidad > 10 %}
+                                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25" style="font-size: 0.7rem;">CONSUMO ALTO</span>
+                                {% else %}
+                                    <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25" style="font-size: 0.7rem;">DESCONTADO</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="text-center text-secondary py-4 italic">No hay registros de salidas recientes.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

@@ -10,26 +10,26 @@
                 {% csrf_token %}
                 
                 <div class="mb-3">
-                    <label class="text-secondary small">Tipo de Pedido</label>
-                    <select name="tipo_pedido" id="tipo_pedido" class="form-select bg-dark text-white border-secondary">
-                        <option value="normal">📦 Pedido Normal (Obra Social - 300 uds)</option>
-                        <option value="propio">🛒 Pedido por cuenta propia</option>
+                    <label class="text-secondary small">Destino del Stock (¿A dónde va?)</label>
+                    <select name="tipo_stock" id="tipo_stock" class="form-select bg-dark text-white border-secondary" style="border-left: 4px solid #38bdf8;">
+                        <option value="stock_normal">📦 Uso Diario (Cajas - Obra Social)</option>
+                        <option value="seguridad">🛡️ Reserva / Seguridad (Unidades - Propio)</option>
                     </select>
                 </div>
 
                 <div class="mb-3">
-                    <label class="text-secondary small"> Fecha del Pedido</label>
+                    <label class="text-secondary small">Fecha del Pedido</label>
                     <input type="date" name="fecha" class="form-control bg-dark text-white border-secondary" required>
                 </div>
 
-                <div id="div_cantidad" class="mb-3" style="display: none;">
-                    <label class="text-secondary small">Cantidad de Sondas (Unidades)</label>
-                    <input type="number" name="cantidad" id="cantidad" class="form-control bg-dark text-white border-secondary" placeholder="Ej: 100">
+                <div id="div_lugar" class="mb-3">
+                    <label class="text-secondary small">Origen / Lugar de compra</label>
+                    <input type="text" name="lugar_compra" id="lugar_compra" class="form-control bg-dark text-white border-secondary" placeholder="Obra Social">
                 </div>
 
-                <div id="div_lugar" class="mb-4" style="display: none;">
-                    <label class="text-secondary small"> ¿Dónde lo compraste?</label>
-                    <input type="text" name="lugar_compra" id="lugar_compra" class="form-control bg-dark text-white border-secondary" placeholder="Ej: Farmacia Central">
+                <div id="div_cantidad" class="mb-4" style="display: none;">
+                    <label class="text-secondary small">Cantidad de Sondas (Unidades)</label>
+                    <input type="number" name="cantidad" id="cantidad" class="form-control bg-dark text-white border-secondary" placeholder="Ej: 100">
                 </div>
 
                 <button type="submit" class="btn btn-info w-100 fw-bold py-2">Guardar Ingreso</button>
@@ -39,19 +39,18 @@
 </div>
 
 <script>
-    document.getElementById('tipo_pedido').addEventListener('change', function() {
+    document.getElementById('tipo_stock').addEventListener('change', function() {
         const divCantidad = document.getElementById('div_cantidad');
-        const divLugar = document.getElementById('div_lugar');
-        const inputLugar = document.getElementById('lugar_compra'); // El ID de tu input
+        const inputLugar = document.getElementById('lugar_compra');
         
-        if (this.value === 'propio') {
+        if (this.value === 'seguridad') {
+            this.style.borderLeft = '4px solid #fbbf24';
             divCantidad.style.display = 'block';
-            divLugar.style.display = 'block';
+            inputLugar.placeholder = "Ej: Mercadolibre, Farmacia...";
         } else {
+            this.style.borderLeft = '4px solid #38bdf8';
             divCantidad.style.display = 'none';
-            divLugar.style.display = 'none';
-            // Limpiamos el valor por si el usuario escribió algo y luego cambió de opinión
-            if (inputLugar) inputLugar.value = ''; 
+            inputLugar.placeholder = "Obra Social";
         }
     });
 </script>

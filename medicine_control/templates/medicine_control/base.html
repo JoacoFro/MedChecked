@@ -57,6 +57,12 @@
             border-radius: 20px;
             padding: 25px;
             transition: transform 0.3s ease;
+            position: relative; 
+            z-index: 1;
+        }
+
+        .col-md-6:has(.dropdown-menu.show) .custom-card {
+            z-index: 1050; /* Un valor alto para que flote sobre todo */
         }
 
         .footer-custom {
@@ -66,15 +72,53 @@
             padding: 15px;
             text-align: center;
             font-size: 0.8rem;
-            color: rgba(255, 255, 255, 0.3);
+            color: white; /* Cambiado a blanco para que se vea mejor sobre el azul */
         }
         
-        /* Estilos de las tarjetas y barras que ya tenías */
         .autonomia-box { background: rgba(56, 189, 248, 0.1); border-left: 4px solid var(--accent-color); border-radius: 10px; }
         .progress { background-color: #334155; border-radius: 20px; }
         .progress-bar { background: linear-gradient(90deg, #0ea5e9, #38bdf8); box-shadow: 0 0 15px rgba(56, 189, 248, 0.3); }
         .btn-light { background: transparent; color: var(--accent-color); border: 1px solid var(--accent-color); }
         .btn-light:hover { background: var(--accent-color); color: white; }
+
+        /* Estilo para que el menú desplegable se vea bien en modo oscuro */
+        .dropdown-menu-dark .dropdown-item:hover {
+            background-color: var(--accent-color);
+            color: white;
+        }
+
+        /* --- ESTILOS NUEVOS DEL BUSCADOR PROFESIONAL --- */
+        .search-wrapper {
+            position: relative;
+            width: 280px;
+        }
+        .search-wrapper i {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            transition: color 0.3s;
+        }
+        #globalSearch {
+            padding: 0.6rem 0.75rem 0.6rem 38px ;
+            background: rgba(15, 23, 42, 0.6) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            border-radius: 12px;
+            color: white;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+        }
+        #globalSearch:focus {
+            background: rgba(15, 23, 42, 0.9) !important;
+            border-color: #0dcaf0 !important; /* Ámbar/Warning */
+            box-shadow: 0 0 10px rgba(255, 193, 7, 0.2);
+            outline: none;
+        }
+        #globalSearch:focus + i {
+            color: #0dcaf0;
+        }
+        /* --------------------------------------------- */
     </style>
 </head>
 <body>
@@ -84,14 +128,25 @@
             <div class="container-fluid d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center">
                     <div class="me-4" style="width: 30px; height: 30px; background: var(--accent-color); border-radius: 8px; box-shadow: 0 0 10px var(--accent-color);"></div>
-                        <a href="{% url 'home' %}" class="nav-link-custom fw-bold">Inicio</a>
-                        <a href="{% url 'cargar' %}" class="nav-link-custom fw-bold">Agregar Pedido</a>
-                        <a class="nav-link" href="{% url 'lista' %}">Ver stock</a>
-                        
-                    </div>
+
+                    <a href="{% url 'home' %}" class="nav-link-custom fw-bold">Inicio</a>
+                    <a href="{% url 'cargar' %}" class="nav-link-custom fw-bold">Agregar Pedido</a>
+                    <a href="{% url 'salida_stock' %}" class="nav-link-custom fw-bold text-warning">Registrar Salida</a>
+                    <a href="{% url 'lista' %}" class="nav-link-custom fw-bold">Ver stock</a>
+                    
+                    <a href="{% url 'envios' %}" class="nav-link-custom fw-bold" style="color: #00f2ff;">
+                        <i class="bi bi-truck me-1"></i> Envíos
+                    </a>
+                </div>
                 
-                <div class="d-flex align-items-center">
-                    <input type="search" placeholder="Buscador de insumos..." class="form-control form-control-sm bg-dark text-white border-secondary" style="width: 250px; border-radius: 10px;">
+                <div class="search-wrapper">
+                    <i class="bi bi-search"></i>
+                    <input type="search" 
+                        id="globalSearch" 
+                        name="q" 
+                        value="{{ query|default:'' }}" 
+                        placeholder="Buscar en esta sección..." 
+                        class="form-control">
                 </div>
             </div>
         </nav>
@@ -106,5 +161,71 @@
         &copy; 2026 Medicine Control System • Monitoreo de Insumos Médicos
     </footer>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        document.getElementById('globalSearch').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                let query = this.value.trim();
+                if (!query) return;
+
+                let currentPath = window.location.pathname;
+
+                // Si estás en la página de envíos (URL: /envios/)
+                if (currentPath.includes('/envios/')) {
+                    window.location.href = `{% url 'envios' %}?q=${query}`;
+                } 
+                // Si estás en la página de stock (URL: /lista/)
+                else if (currentPath.includes('/lista/')) {
+                    window.location.href = `{% url 'lista' %}?q=${query}`;
+                }
+                // En Home o Cargar no hace nada para evitar errores
+                else {
+                    console.log("Búsqueda no disponible en esta página.");
+                }
+            }
+        });
+    </script>
+<script>
+    const searchInput = document.getElementById('globalSearch');
+
+    // 1. Detectar el Enter (Búsqueda manual)
+    searchInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            let query = this.value.trim();
+            if (!query) {
+                // Si presiona enter y está vacío, resetea la vista
+                resetSearch();
+                return;
+            }
+            ejecutarBusqueda(query);
+        }
+    });
+
+    // 2. Detectar cuando se borra el contenido (Auto-reset)
+    searchInput.addEventListener('input', function () {
+        // Si el usuario borra todo con backspace o la "x" del buscador
+        if (this.value.trim() === "") {
+            resetSearch();
+        }
+    });
+
+    function ejecutarBusqueda(query) {
+        let currentPath = window.location.pathname;
+        let url = currentPath.includes('/envios/') ? "{% url 'envios' %}" : "{% url 'lista' %}";
+        window.location.href = url + "?q=" + encodeURIComponent(query);
+    }
+
+    function resetSearch() {
+        let currentPath = window.location.pathname;
+        // Simplemente redirige a la página limpia sin parámetros ?q=
+        if (currentPath.includes('/envios/')) {
+            window.location.href = "{% url 'envios' %}";
+        } else {
+            window.location.href = "{% url 'lista' %}";
+        }
+    }
+</script>
 </body>
 </html>

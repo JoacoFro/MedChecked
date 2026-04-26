@@ -1,31 +1,108 @@
 from django.db import models
+from django.db.models import Sum
+from django.utils import timezone
+from datetime import datetime, timedelta
 
 class Insumo(models.Model):
     nombre = models.CharField(max_length=100)
     stock_actual_cajas = models.IntegerField() 
     unidades_por_caja = models.IntegerField(default=30)
-    consumo_diario = models.IntegerField(default=0)
+    consumo_diario = models.FloatField(default=0) 
     backup_unidades = models.IntegerField(default=0)
 
+    # --- INYECCIÓN DE INTELIGENCIA (PROPIEDADES SMART) ---
+
+    @property
+    def total_unidades_reales(self):
+        """Calcula el stock total combinando cajas y unidades sueltas."""
+        return (self.stock_actual_cajas * self.unidades_por_caja) + self.backup_unidades
+
+    @property
+    def autonomia_smart(self):
+        """IA Predictiva: Calcula cuántos días quedan según el consumo actual."""
+        consumo = self.consumo_diario if self.consumo_diario > 0 else 8
+        return int(self.total_unidades_reales // consumo)
+
+    @property
+    def semaforo_estado(self):
+        """IA de Diagnóstico: Determina el riesgo de quiebre de stock."""
+        dias = self.autonomia_smart
+        if dias > 40: return "OPTIMO"
+        if dias > 20: return "ESTABLE"
+        if dias > 10: return "ALERTA"
+        return "CRITICO"
+
     def obtener_ultimo_lugar(self):
-        # Buscamos el último pedido vinculado a este insumo
         ultimo_pedido = self.pedido_set.order_by('-fecha', '-id').first()
         if ultimo_pedido:
             return ultimo_pedido.lugar_compra
         return "Sin registros"
 
+    def __str__(self):
+        return self.nombre
+
 class Pedido(models.Model):
     TIPO_CHOICES = [
-        ('normal', 'Obra Social'),
-        ('propio', 'Cuenta Propia'),
+        ('os', 'Obra Social'),
+        ('backup', 'Reserva / Backup'),
     ]
+    DESTINO_CHOICES = [('stock_normal', 'Stock Normal'), ('seguridad', 'Reserva / Seguridad')]
     
-    # IMPORTANTE: on_delete (sin el 'run') y el Insumo tiene que estar arriba
     insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE)
-    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES)
-    cantidad = models.IntegerField()
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default='os')
+    tipo_stock = models.CharField(max_length=20, choices=DESTINO_CHOICES, default='stock_normal')
+    cantidad = models.IntegerField() 
     fecha = models.DateField()
     lugar_compra = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
-        return f"{self.tipo} - {self.fecha}"
+        return f"{self.insumo.nombre} - {self.get_tipo_stock_display()} ({self.fecha})"
+
+class Salida(models.Model):
+    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE)
+    cantidad_cajas = models.PositiveIntegerField(default=0)
+    cantidad = models.PositiveIntegerField() 
+    tipo_stock = models.CharField(max_length=20) 
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Salida de {self.cantidad} unidades de {self.insumo.nombre}"
+
+class HistorialMovimiento(models.Model):
+    TIPO_CHOICES = [('INGRESO', 'Ingreso'), ('SALIDA', 'Salida')]
+    STOCK_CHOICES = [('NORMAL', 'Caja Normal'), ('BACKUP', 'Stock de Seguridad')]
+    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE)
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES)
+    tipo_stock = models.CharField(max_length=10, choices=STOCK_CHOICES)
+    cantidad_unidades = models.IntegerField()
+    fecha = models.DateTimeField(auto_now_add=True)
+
+class Envio(models.Model):
+    ESTADOS = [
+        ('tramite', 'En Trámite'),
+        ('recibido', 'Recibido'),
+        ('pendiente', 'Pendiente'),
+    ]
+    
+    # Definimos los tipos fijos
+    TIPOS = [
+        ('os', 'Obra Social'),
+        ('backup', 'Back Up / Propio'),
+    ]
+    
+    fecha_solicitud = models.DateField(auto_now_add=True)
+    fecha_cierre = models.DateField(null=True, blank=True)
+    cantidad_pedida = models.IntegerField(default=12)
+    # Cambiamos a choices para tener control total
+    tipo = models.CharField(max_length=10, choices=TIPOS, default='os') 
+    estado = models.CharField(max_length=20, choices=ESTADOS, default='tramite')
+    notas = models.TextField(blank=True, null=True)
+
+    @property
+    def demora_real(self):
+        if self.fecha_cierre:
+            return (self.fecha_cierre - self.fecha_solicitud).days
+        return (timezone.now().date() - self.fecha_solicitud).days
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} - {self.get_estado_display()}"

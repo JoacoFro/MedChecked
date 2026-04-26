@@ -1,0 +1,108 @@
+{% extends 'medicine_control/base.html' %}
+
+{% block contenido %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold text-white">Registro de Envíos</h2>
+    <div class="custom-card px-4 py-2 border border-warning" style="background: rgba(255, 193, 7, 0.05);">
+        <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Demora Promedio:</span>
+        <span class="text-warning fw-bold ms-2">{{ promedio_demora }} días</span>
+    </div>
+</div>
+
+<div class="custom-card shadow p-0 overflow-hidden"> 
+    <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle mb-0">
+            <thead class="text-secondary small" style="background: rgba(255,255,255,0.02);">
+                <tr>
+                    <th class="ps-4 py-3">FECHA SOLICITUD</th>
+                    <th class="py-3">ESTADO</th>
+                    <th class="py-3">ORIGEN / NOTAS</th>
+                    <th class="py-3 text-center">ACCIONES</th>
+                </tr>
+            </thead>
+            <tbody class="border-top-0">
+                {% for envio in envios %}
+                <tr>
+                    <td class="ps-4">
+                        <div class="d-flex flex-column">
+                            <span class="fw-bold text-white">{{ envio.fecha_solicitud|date:"d/m/Y" }}</span>
+                            <small class="text-secondary" style="font-size: 0.7rem;">Hace {{ envio.demora_real }} días</small>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="d-flex flex-column">
+                            {% if envio.estado == 'tramite' %}
+                                <span class="badge rounded-pill px-3 py-2" style="background: rgba(255, 193, 7, 0.1); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.3); width: fit-content;">
+                                    <i class="bi bi-clock-history me-1"></i> En Trámite
+                                </span>
+                            {% elif envio.estado == 'recibido' %}
+                                <span class="badge rounded-pill px-3 py-2" style="background: rgba(25, 135, 84, 0.1); color: #198754; border: 1px solid rgba(25, 135, 84, 0.3); width: fit-content;">
+                                    <i class="bi bi-check-circle me-1"></i> Recibido
+                                </span>
+                                {% if envio.fecha_cierre %}
+                                    <small class="text-secondary ps-1 mt-1" style="font-size: 0.65rem;">
+                                    <i class="bi bi-calendar-check me-1"></i>
+                                    {{ envio.fecha_cierre|date:"d/m/Y" }} 
+                                    </small>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge rounded-pill px-3 py-2 bg-secondary opacity-50" style="width: fit-content;">
+                                    {{ envio.get_estado_display }}
+                                </span>
+                            {% endif %}
+                        </div>
+                    </td>
+
+                    <td>
+                        <div class="d-flex flex-column">
+                            {% if envio.tipo == 'os' %}
+                                <span class="badge rounded-pill px-3 py-1 mb-1" 
+                                      style="background: rgba(0, 242, 255, 0.1); color: #00f2ff; border: 1px solid rgba(0, 242, 255, 0.3); width: fit-content; font-size: 0.75rem;">
+                                    <i class="bi bi-hospital me-1"></i> Obra Social
+                                </span>
+                            {% elif envio.tipo == 'backup' %}
+                                <span class="badge rounded-pill px-3 py-1 mb-1" 
+                                      style="background: rgba(255, 193, 7, 0.1); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.3); width: fit-content; font-size: 0.75rem;">
+                                    <i class="bi bi-shield-shaded me-1"></i> Back Up
+                                </span>
+                            {% else %}
+                                <span class="badge rounded-pill px-3 py-1 mb-1 bg-secondary opacity-50" style="width: fit-content; font-size: 0.75rem;">
+                                    {{ envio.tipo|default:"Sin asignar" }}
+                                </span>
+                            {% endif %}
+                            
+                            {% if envio.notas %}
+                                <small class="text-info opacity-75 ps-1" style="font-size: 0.7rem; font-family: 'Courier New', Courier, monospace;">
+                                    <i class="bi bi-info-circle me-1"></i>{{ envio.notas }}
+                                </small>
+                            {% endif %}
+                        </div>
+                    </td>
+
+                    <td class="text-center">
+                        {% if envio.estado == 'tramite' %}
+                            <button class="btn btn-outline-success btn-sm px-3" 
+                                    onclick="marcarRecibido('{{ envio.tipo }}')">
+                                <i class="bi bi-box-seam me-1"></i> Recibir
+                            </button>
+                        {% else %}
+                            <div class="d-flex flex-column align-items-center">
+                                <i class="bi bi-check-all text-success fs-5"></i>
+                                <span class="text-secondary small italic" style="font-size: 0.7rem;">Completado</span>
+                            </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="4" class="text-center py-5 text-secondary">
+                        <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                        No hay registros de envíos iniciados.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

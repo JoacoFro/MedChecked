@@ -1,10 +1,14 @@
 from django.contrib import admin
 from django.urls import path
-from medicine_control.views import home, cargar_insumo, lista_insumos # Agregá lista_insumos aquí
+from medicine_control import views # Importamos el módulo completo para ser más ordenados
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', home, name='home'),
-    path('cargar/', cargar_insumo, name='cargar'),
-    path('lista/', lista_insumos, name='lista'), 
+    path('', views.home, name='home'),
+    path('cargar/', views.cargar_insumo, name='cargar'),
+    path('lista/', views.lista_insumos, name='lista'), 
+    path('salida/', views.registrar_salida, name='salida_stock'), 
+    path('envios/', views.lista_envios, name='envios'),
+    path('iniciar-pedido/', views.iniciar_pedido, name='iniciar_pedido'), # Esta es la clave
+    path('marcar-recibido/', views.marcar_recibido_home, name='marcar_recibido_home'),
 ]

@@ -1,0 +1,62 @@
+{% extends 'medicine_control/base.html' %}
+
+{% block contenido %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="custom-card shadow p-4">
+            <h3 class="fw-bold mb-4 text-warning text-center">Registrar Salida de Stock</h3>
+            
+            <form method="POST">
+                {% csrf_token %}
+                
+                <div class="mb-3">
+                    <label class="text-secondary small">Tipo de Stock</label> 
+                    <select name="tipo_stock" id="tipo_stock" class="form-select bg-dark text-white border-secondary" required>
+                        <option value="stock_normal">📦 Stock Normal (Por Cajas de 30)</option>
+                        <option value="seguridad">🛡️ Stock de Seguridad (Por Unidades)</option>
+                     </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="text-secondary small">Fecha de Salida</label>
+                    <input type="date" name="fecha" class="form-control bg-dark text-white border-secondary" required>
+                </div>
+
+                <div class="mb-4">
+                    <label id="label_cantidad" class="text-secondary small">Cantidad de Cajas</label>
+                    <input type="number" name="cantidad" id="cantidad" class="form-control bg-dark text-white border-secondary" placeholder="Ej: 1" required min="1">
+                    <div id="ayuda_calculo" class="form-text text-info small mt-2">
+                        Se descontarán 30 unidades del stock normal por cada caja.
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-warning w-100 fw-bold py-2 text-dark shadow">Confirmar Salida</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    const selectorStock = document.getElementById('tipo_stock');
+    const labelCantidad = document.getElementById('label_cantidad');
+    const ayudaCalculo = document.getElementById('ayuda_calculo');
+
+    function actualizarInterfaz() {
+        if (selectorStock.value === 'stock_normal') {
+            labelCantidad.innerText = 'Cantidad de Cajas';
+            ayudaCalculo.innerText = 'Se descontarán 30 unidades del stock normal por cada caja.';
+            ayudaCalculo.classList.remove('text-warning');
+            ayudaCalculo.classList.add('text-info');
+        } else {
+            labelCantidad.innerText = 'Cantidad de Unidades';
+            ayudaCalculo.innerText = 'Se descontarán unidades individuales del stock de seguridad.';
+            ayudaCalculo.classList.remove('text-info');
+            ayudaCalculo.classList.add('text-warning');
+        }
+    }
+
+    selectorStock.addEventListener('change', actualizarInterfaz);
+    // Ejecutar al cargar para sincronizar el estado inicial
+    actualizarInterfaz();
+</script>
+{% endblock %}

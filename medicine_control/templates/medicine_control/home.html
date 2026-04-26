@@ -1,67 +1,240 @@
 {% extends 'medicine_control/base.html' %}
 
 {% block contenido %}
-<div class="row g-4">
-    <div class="col-md-7">
-        
-        <div class="custom-card shadow p-4 mb-4">
+<div class="row g-3 mb-4">
+    <div class="col">
+        <div class="custom-card shadow text-center p-3 h-100">
+            <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Total Global</span>
+            <h3 class="fw-bold mt-2 text-info" style="text-shadow: 0 0 10px rgba(13, 202, 240, 0.4);">{{ total_unidades }}</h3>
+            <small class="text-secondary">Unidades Reales</small>
+        </div>
+    </div>
+    <div class="col">
+        <div class="custom-card shadow text-center p-3 h-100">
+            <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Total Cajas</span>
+            <h3 class="fw-bold mt-2 text-white">{{ total_cajas }}</h3>
+            <small class="text-secondary">En stock</small>
+        </div>
+    </div>
+    <div class="col">
+        <div class="custom-card shadow p-3 h-100" style="border: 1px solid rgba(0, 242, 255, 0.3); background: rgba(13, 110, 253, 0.08); position: relative; display: flex; flex-direction: column; justify-content: center;">
+            <div style="position: absolute; left: 15px; top: 50%; transform: translateY(-45%);">
+                <i class="bi bi-shield-shaded" style="font-size: 2.8rem; color: #00f2ff; text-shadow: 0 0 15px #00f2ff;"></i>
+            </div>
+            <div class="text-center w-100">
+                <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Reserva</span>
+                <h3 class="fw-bold mt-2 mb-0" style="color: #00f2ff; text-shadow: 0 0 10px rgba(0, 242, 255, 0.5); line-height: 1.1;">{{ total_backup }}</h3>
+                <small class="text-info opacity-75 fw-bold" style="font-size: 0.75rem;">Sondas sueltas</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="custom-card shadow text-center p-3 h-100">
+            <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Consumo IA</span>
+            <h3 class="fw-bold mt-2 text-warning" style="text-shadow: 0 0 10px rgba(251, 191, 36, 0.3);">{{ consumo_diario|floatformat:1 }}</h3>
+            <small class="text-secondary">Sondas / día</small>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4 d-flex align-items-stretch">
+    <div class="col-md-6">
+        <div class="custom-card shadow p-4 h-100 d-flex flex-column justify-content-between">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h3 class="fw-bold mb-0" style="color: var(--accent-color);">Estado Actual</h3>
-                <button class="btn btn-light btn-sm px-3">Ver detalle</button>
+                <a href="{% url 'lista' %}" class="btn btn-light btn-sm px-3">Ver detalle</a>
             </div>
             
             <div class="mb-4">
                 <div class="d-flex justify-content-between mb-2">
-                    <span class="text-secondary">Stock de Insumos</span>
-                    <span class="fw-bold">{{ porcentaje|floatformat:0 }}%</span>
+                    <span class="text-secondary">Capacidad de Stock</span>
+                    <span class="fw-bold text-info">{{ porcentaje|floatformat:0 }}%</span>
                 </div>
-                <div class="progress" style="height: 10px; background-color: rgba(255,255,255,0.1); border-radius: 10px;">
-                    <div class="progress-bar" role="progressbar" 
-                         style="width: {{ porcentaje }}%; background: linear-gradient(90deg, #0d6efd, #0dcaf0); box-shadow: 0 0 10px rgba(13, 202, 240, 0.5);">
+                <div class="progress" style="height: 12px; background-color: rgba(255,255,255,0.05); border-radius: 10px; overflow: hidden;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" 
+                         style="width: {{ porcentaje }}%; 
+                                 {% if porcentaje < 20 %}
+                                    background: linear-gradient(90deg, #ff4b2b, #ff416c); 
+                                    box-shadow: 0 0 15px rgba(255, 75, 43, 0.7);
+                                 {% elif porcentaje < 50 %}
+                                    background: linear-gradient(90deg, #f8ff00, #f8c102); 
+                                    box-shadow: 0 0 15px rgba(248, 193, 2, 0.5);
+                                 {% else %}
+                                    background: linear-gradient(90deg, #0d6efd, #0dcaf0); 
+                                    box-shadow: 0 0 10px rgba(13, 202, 240, 0.5);
+                                 {% endif %}">
                     </div>
                 </div>
             </div>
 
-            <div class="autonomia-box p-4 text-center mt-4" style="background: rgba(13, 110, 253, 0.05); border-radius: 15px; border: 1px solid rgba(13, 110, 253, 0.2);">
-                <span class="text-secondary d-block mb-1 text-uppercase small">Autonomía Estimada</span>
-                <h3 class="display-4 fw-bold text-white">{{ autonomia }} Días</h3>
-                <small class="text-info">Basado en tu consumo diario</small>
-            </div>
-        </div>
+            <div class="autonomia-box p-4 text-center" 
+     style="border-radius: 15px; border: 1px solid rgba(13, 110, 253, 0.2); transition: all 0.5s ease;
+            {% if autonomia < 10 %} background: rgba(220, 53, 69, 0.2); border-color: rgba(220, 53, 69, 0.5);
+            {% elif autonomia < 20 %} background: rgba(255, 193, 7, 0.15); border-color: rgba(255, 193, 7, 0.4);
+            {% else %} background: rgba(13, 110, 253, 0.05); {% endif %}">
+    
+    <span class="text-secondary d-block mb-1 text-uppercase small">Autonomía Estimada</span>
+    
+    <h3 class="display-4 fw-bold 
+        {% if autonomia < 10 %} text-danger 
+        {% elif autonomia < 20 %} text-warning 
+        {% else %} text-white {% endif %}">
+        {{ autonomia }} Días
+    </h3>
 
-        <div class="custom-card shadow p-4">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <p class="text-secondary mb-1">Próximo pedido sugerido</p>
-                    <h5 class="fw-bold mb-0 text-white">{{ proximo_pedido|date:"d \d\e F, Y" }}</h5>
-                </div>
-                <button class="btn btn-light btn-sm px-3">Ver registro</button>
-            </div>
+    {% if autonomia < 10 %}
+        <div class="mb-2">
+            <span class="badge bg-danger text-white px-3 py-2 animate__animated animate__flash animate__infinite">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i> ¡REPOSICIÓN NECESARIA!
+            </span>
+        </div>
+    {% elif autonomia < 20 %}
+        <div class="mb-2">
+            <span class="badge bg-warning text-dark px-3 py-2">
+                <i class="bi bi-exclamation-circle me-1"></i> PREPARAR PEDIDO
+            </span>
+        </div>
+    {% endif %}
+
+    <small class="text-info">Stock recalculado según comportamiento real</small>
+</div>
         </div>
     </div>
 
-    <div class="col-md-5">
-        <div class="custom-card shadow h-100 p-4">
-            <h4 class="text-center mb-4 fw-bold text-white">Calendario de Entregas</h4>
-            <div class="table-responsive">
-                <table class="table table-dark table-borderless text-center align-middle">
-                    <thead>
-                        <tr class="text-secondary small">
-                            <th>LUN</th><th>MAR</th><th>MIÉ</th><th>JUE</th><th>VIE</th>
-                        </tr>
-                    </thead>
-                    <tbody class="fw-light">
-                        <tr><td>1</td><td>2</td><td class="text-info fw-bold">3</td><td>4</td><td>5</td></tr>
-                        <tr><td>8</td><td>9</td><td>10</td><td>11</td><td>12</td></tr>
-                        <tr><td>15</td><td>16</td><td>17</td><td><span class="bg-primary d-inline-block rounded-circle" style="width: 30px; height: 30px; line-height: 30px;">18</span></td><td>19</td></tr>
-                        <tr><td>22</td><td>23</td><td>24</td><td>25</td><td>26</td></tr>
-                    </tbody>
-                </table>
+    <div class="col-md-6">
+        <div class="custom-card shadow p-4 h-100 d-flex flex-column justify-content-between">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <a href="{% url 'envios' %}" class="btn btn-outline-warning btn-sm px-3">
+                    <i class="bi bi-clock-history me-1"></i> Ver historial
+                </a>
             </div>
-            <div class="mt-3 p-2 rounded border border-secondary border-opacity-25 small text-center text-secondary">
-                Próxima entrega de OS: <span class="text-white">Viernes 18</span>
+
+            <div class="text-center py-4 flex-grow-1 d-flex flex-column justify-content-center">
+                <span class="text-secondary text-uppercase small">Fecha Sugerida por IA</span>
+                <h2 class="display-5 fw-bold text-white mt-2 mb-0">29 de May, 2026</h2>
+                <p class="text-warning small mt-2">Día límite recomendado para iniciar el trámite</p>
+            </div>
+
+            <div class="mt-auto pt-3 border-top border-secondary border-opacity-25">
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <button class="btn btn-primary w-100 py-2" 
+                                onclick="enviarPedido('Obra Social')" 
+                                {% if hay_os_pendiente %} disabled {% endif %}>
+                            <i class="bi bi-send-plus me-1"></i> 
+                            {% if hay_os_pendiente %} Trámite OS en curso {% else %} Iniciar Trámite OS {% endif %}
+                        </button>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="dropdown">
+                            <button class="btn w-100 py-2 btn-outline-info dropdown-toggle" 
+                                    type="button" id="dropdownBackup" data-bs-toggle="dropdown" 
+                                    aria-expanded="false"
+                                    style="background-color: rgba(0, 242, 255, 0.1); border-color: rgba(0, 242, 255, 0.5);">
+                                <i class="bi bi-shield-shaded me-1"></i> 
+                                {% if hay_backup_pendiente %} Backup en curso {% else %} Stock Seguridad {% endif %}
+                            </button>
+
+                            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow w-100">
+                                <li>
+                                    <button class="dropdown-item py-2 {% if hay_backup_pendiente %}disabled{% endif %}" 
+                                            {% if not hay_backup_pendiente %} onclick="enviarPedido('backup')" {% endif %}
+                                            {% if hay_backup_pendiente %} disabled {% endif %}>
+                                        <i class="bi bi-cart-plus me-2 text-info"></i> Iniciar pedido Backup
+                                    </button>
+                                </li>
+                                <li><hr class="dropdown-divider bg-secondary"></li>
+                                <li>
+                                    <button class="dropdown-item py-2 {% if not hay_backup_pendiente %}disabled{% endif %}" 
+                                            {% if hay_backup_pendiente %} onclick="marcarRecibido('backup')" {% endif %}
+                                            {% if not hay_backup_pendiente %} disabled {% endif %}>
+                                        <i class="bi bi-check2-square me-2 text-success"></i> Marcar como Recibido
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="col-12 mt-1">
+                        <button class="btn btn-success w-100 py-2" 
+                                onclick="marcarRecibido('os')" 
+                                {% if not hay_os_pendiente %} disabled {% endif %}>
+                            <i class="bi bi-check2-circle me-1"></i> 
+                            Marcar Recibido (OS)
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+// Esta es la función maestra que maneja todo
+function ejecutarAccion(url, datos) {
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify(datos)
+    })
+    .then(response => {
+        if (!response.ok) {
+            // Si el servidor tira error, lo vemos en la consola
+            console.error("Error del servidor:", response.status);
+            throw new Error('Error en la respuesta del servidor');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            Swal.fire({
+                title: '¡Éxito!',
+                text: data.message,
+                icon: 'success',
+                background: '#1a1d21',
+                color: '#fff',
+                timer: 1500,
+                showConfirmButton: false
+            }).then(() => location.reload());
+        } else {
+            Swal.fire({
+                title: 'Aviso',
+                text: data.message,
+                icon: 'info',
+                background: '#1a1d21',
+                color: '#fff'
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Error de red/JS:', error);
+        Swal.fire({
+            title: 'Error',
+            text: 'No se pudo conectar con el servidor. Revisá la consola (F12).',
+            icon: 'error',
+            background: '#1a1d21',
+            color: '#fff'
+        });
+    });
+}
+
+// Vinculamos los botones a las URLs de Django
+function enviarPedido(tipo) {
+    // Usamos el nombre de la URL que tenés en urls.py
+    ejecutarAccion("{% url 'iniciar_pedido' %}", { 'tipo': tipo });
+}
+
+function marcarRecibido(tipo) {
+    // IMPORTANTE: Asegurate que 'marcar_recibido_home' sea el NAME en tu urls.py
+    // Si se llama distinto, cambialo acá:
+    ejecutarAccion("{% url 'marcar_recibido_home' %}", { 'tipo': tipo });
+}
+</script>
 {% endblock %}

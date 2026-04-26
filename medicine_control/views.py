@@ -1,96 +1,211 @@
 from django.shortcuts import render, redirect
-from .forms import PedidoForm
-from .models import Insumo, Pedido
-from django.db.models import Sum
+from .forms import PedidoForm, SalidaStockForm
+from .models import Insumo, Pedido, Salida, Envio
+from django.db.models import Sum, Q 
 from datetime import datetime, timedelta
 from django.utils.dateparse import parse_date
+from django.utils import timezone
+from django.http import JsonResponse
+import json
 
 def home(request):
     insumos = Insumo.objects.all()
+    total_unidades = sum(i.total_unidades_reales for i in insumos)
+    total_cajas = sum(i.stock_actual_cajas for i in insumos)
+    total_backup = sum(i.backup_unidades for i in insumos)
     
-    # 1. Calculamos el total de unidades físicas (Cajas * Unidades por caja)
-    total_unidades = sum(i.stock_actual_cajas * i.unidades_por_caja for i in insumos)
+    hace_dos_semanas = datetime.now() - timedelta(days=14)
+    salidas_recientes = Salida.objects.filter(fecha__gte=hace_dos_semanas)
+    unidades_consumidas = salidas_recientes.aggregate(Sum('cantidad'))['cantidad__sum'] or 0
     
-    # 2. Consumo diario total
-    consumo_total = insumos.aggregate(Sum('consumo_diario'))['consumo_diario__sum'] or 0
+    promedio_ia = unidades_consumidas / 14
+    consumo_final = max(promedio_ia, 8) 
     
-    # 3. Autonomía Real
-    autonomia = total_unidades // consumo_total if consumo_total > 0 else 0
+    techo_fijo = 400
+    porcentaje = min((total_unidades / techo_fijo) * 100, 100)
     
-    # 4. Porcentaje para la barra (basado en el pack de 300)
-    porcentaje = min((total_unidades / 300) * 100, 100)
-    
-    # 5. Fecha sugerida de próximo pedido (Hoy + Autonomía)
+    autonomia = int(total_unidades // consumo_final) if consumo_final > 0 else 0
     proximo_pedido = datetime.now() + timedelta(days=autonomia)
 
+    hay_os_pendiente = Envio.objects.filter(estado='tramite', tipo='os').exists()
+    hay_backup_pendiente = Envio.objects.filter(estado='tramite', tipo='backup').exists()
+
     context = {
+        'total_unidades': total_unidades,
+        'total_cajas': total_cajas,
+        'total_backup': total_backup,
+        'consumo_diario': round(consumo_final, 1),
         'autonomia': autonomia,
         'porcentaje': porcentaje,
         'proximo_pedido': proximo_pedido,
+        'hay_os_pendiente': hay_os_pendiente,
+        'hay_backup_pendiente': hay_backup_pendiente,
     }
     return render(request, 'medicine_control/home.html', context)
 
 def cargar_insumo(request):
     if request.method == 'POST':
-        insumo_default, created = Insumo.objects.get_or_create(
-            nombre="Sondas", 
-            defaults={'stock_actual_cajas': 0}
-        )
+        insumo_default, _ = Insumo.objects.get_or_create(nombre="Sondas")
+        tipo_destino = request.POST.get('tipo_stock')
+        fecha = parse_date(request.POST.get('fecha'))
+        lugar = request.POST.get('lugar_compra') or "Obra Social"
         
-        tipo = request.POST.get('tipo_pedido')
-        fecha_str = request.POST.get('fecha')
-        fecha = parse_date(fecha_str)
-        
-        if tipo == 'normal':
-            cantidad = 300
+        if tipo_destino == 'stock_normal':
+            cantidad = 300 
             insumo_default.stock_actual_cajas += 10
-            lugar = "Obra Social" 
+            tipo_para_db = 'normal'
         else:
             cantidad = int(request.POST.get('cantidad', 0))
             insumo_default.backup_unidades += cantidad
-            lugar = request.POST.get('lugar_compra')
+            tipo_para_db = 'propio'
 
         insumo_default.save()
 
-        # Creamos el registro del historial
         Pedido.objects.create(
             insumo=insumo_default,
-            tipo=tipo,
+            tipo=tipo_para_db,
+            tipo_stock=tipo_destino,
             cantidad=cantidad,
             fecha=fecha,
             lugar_compra=lugar
         )
-        
-        # 1. REDIRECT: Usamos 'lista' porque así está en tu urls.py (name='lista')
-        return redirect('lista') 
-    
+        return redirect('lista')
     return render(request, 'medicine_control/cargar_insumo.html')
 
 def lista_insumos(request):
-    insumos = Insumo.objects.all()
+    # 1. Capturamos búsqueda
+    query = request.GET.get('q', '').strip().lower()
     
-    # 2. HISTORIAL: Traemos los pedidos para que la tabla muestre lo que agregás
-    ingresos = Pedido.objects.all().order_by('-fecha') 
+    # 2. Datos Base (Métricas siempre globales)
+    insumos_qs = Insumo.objects.all()
+    pedidos_qs = Pedido.objects.all().order_by('-fecha') 
+    salidas_qs = Salida.objects.all().order_by('-fecha')
 
-    # --- Tus cálculos de stock ---
-    total_unidades = sum((i.stock_actual_cajas * i.unidades_por_caja) + i.backup_unidades for i in insumos)
-    total_cajas = insumos.aggregate(Sum('stock_actual_cajas'))['stock_actual_cajas__sum'] or 0
-    total_backup = insumos.aggregate(Sum('backup_unidades'))['backup_unidades__sum'] or 0
-    consumo_diario_total = insumos.aggregate(Sum('consumo_diario'))['consumo_diario__sum'] or 0
-    autonomia = total_unidades // consumo_diario_total if consumo_diario_total > 0 else 0
-    unidades_os = sum(i.stock_actual_cajas * i.unidades_por_caja for i in insumos)
-    porcentaje_general = min((unidades_os / 300) * 100, 100)
+    # --- CÁLCULOS GLOBALES (Independientes de la búsqueda) ---
+    total_unidades = sum(i.total_unidades_reales for i in insumos_qs)
+    total_cajas = sum(i.stock_actual_cajas for i in insumos_qs)
+    total_backup = sum(i.backup_unidades for i in insumos_qs)
+    
+    hace_dos_semanas = datetime.now() - timedelta(days=14)
+    salidas_recientes = Salida.objects.filter(fecha__gte=hace_dos_semanas)
+    unidades_consumidas = salidas_recientes.aggregate(Sum('cantidad'))['cantidad__sum'] or 0
+    
+    promedio_ia = unidades_consumidas / 14
+    consumo_final = max(promedio_ia, 8)
+    autonomia = int(total_unidades // consumo_final) if consumo_final > 0 else 0
+    techo_fijo = 400
+    porcentaje = min((total_unidades / techo_fijo) * 100, 100)
+
+    # 3. FILTRADO (Solo afecta a las tablas de abajo)
+    if query:
+        if query in ['backup', 'reserva', 'seguridad', 'propio']:
+            pedidos_qs = pedidos_qs.filter(tipo_stock='seguridad')
+            salidas_qs = salidas_qs.filter(tipo_stock='seguridad')
+        elif query in ['normal', 'os', 'obra social', 'bna']:
+            pedidos_qs = pedidos_qs.filter(tipo_stock='stock_normal')
+            salidas_qs = salidas_qs.filter(tipo_stock='stock_normal')
+        else:
+            pedidos_qs = pedidos_qs.filter(
+                Q(lugar_compra__icontains=query) | 
+                Q(tipo__icontains=query)
+            )
+            salidas_qs = salidas_qs.filter(tipo_stock__icontains=query)
 
     context = {
-        'insumos': insumos,
-        'ingresos': ingresos, 
+        'insumos': insumos_qs, 
+        'ingresos': pedidos_qs, 
+        'salidas': salidas_qs,
         'total_unidades': total_unidades,
         'total_cajas': total_cajas,
         'total_backup': total_backup,
+        'consumo_diario': round(consumo_final, 1),
         'autonomia': autonomia,
-        'consumo_diario': consumo_diario_total,
-        'porcentaje_general': porcentaje_general,
+        'porcentaje': porcentaje,
+        'query': query,
     }
-    
-    # 3. RENDER: Usamos el nombre en plural como me confirmaste recién
     return render(request, 'medicine_control/lista_insumos.html', context)
+
+def registrar_salida(request):
+    if request.method == 'POST':
+        insumo = Insumo.objects.get(nombre="Sondas")
+        tipo_stock = request.POST.get('tipo_stock')
+        cantidad_ingresada = int(request.POST.get('cantidad', 0))
+        
+        if tipo_stock == 'stock_normal':
+            unidades_totales = cantidad_ingresada * 30
+            insumo.stock_actual_cajas -= cantidad_ingresada
+            cant_cajas_registro = cantidad_ingresada
+        else:
+            unidades_totales = cantidad_ingresada
+            insumo.backup_unidades -= unidades_totales
+            cant_cajas_registro = 0
+
+        insumo.save()
+
+        Salida.objects.create(
+            insumo=insumo,
+            cantidad_cajas=cant_cajas_registro,
+            cantidad=unidades_totales,
+            tipo_stock=tipo_stock
+        )
+        return redirect('lista')
+    return render(request, 'medicine_control/salida_stock.html', {'insumo': Insumo.objects.first()})
+
+def lista_envios(request):
+    query = request.GET.get('q', '').strip().lower()
+    envios = Envio.objects.all().order_by('-fecha_solicitud')
+
+    if query:
+        if query in ['backup', 'reserva', 'seguridad']:
+            envios = envios.filter(tipo='backup')
+        elif query in ['normal', 'obra social', 'os']:
+            envios = envios.filter(tipo='os')
+        else:
+            envios = envios.filter(Q(estado__icontains=query) | Q(notas__icontains=query))
+
+    recibidos = Envio.objects.filter(estado='recibido')
+    promedio_demora = sum(e.demora_real for e in recibidos) / recibidos.count() if recibidos.exists() else 0
+
+    return render(request, 'medicine_control/envios.html', {
+        'envios': envios,
+        'promedio_demora': round(promedio_demora, 1),
+        'query': query 
+    })
+
+def iniciar_pedido(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body) if request.body else {}
+            tipo_recibido = data.get('tipo', 'os')
+            tipo_final = 'backup' if 'backup' in tipo_recibido.lower() or 'propio' in tipo_recibido.lower() else 'os'
+            
+            if Envio.objects.filter(estado='tramite', tipo=tipo_final).exists():
+                return JsonResponse({'status': 'error', 'message': f'Ya existe un pedido de este tipo en curso.'}, status=400)
+
+            Envio.objects.create(
+                estado='tramite', 
+                tipo=tipo_final,
+                cantidad_pedida=12,
+                notas=f"Iniciado desde Home"
+            )
+            return JsonResponse({'status': 'success', 'message': '¡Trámite iniciado!'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+def marcar_recibido_home(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            tipo_recibido = data.get('tipo', '').lower()
+            tipo_final = 'backup' if 'backup' in tipo_recibido else 'os'
+            pedido = Envio.objects.filter(estado='tramite', tipo=tipo_final).last()
+            
+            if pedido:
+                pedido.estado = 'recibido'
+                pedido.fecha_cierre = timezone.now() 
+                pedido.save()
+                return JsonResponse({'status': 'success', 'message': f'Trámite cerrado.'})
+            return JsonResponse({'status': 'error', 'message': f'No hay trámite pendiente.'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    return JsonResponse({'status': 'error', 'message': 'Método no permitido'}, status=405)
