@@ -6,7 +6,9 @@ from datetime import datetime, timedelta
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.http import JsonResponse
+from .telegram_utils import enviar_alerta
 import json
+
 
 def home(request):
     insumos = Insumo.objects.all()
