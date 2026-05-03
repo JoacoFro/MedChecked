@@ -9,25 +9,36 @@ from django.http import JsonResponse
 from .telegram_utils import enviar_alerta
 import json
 
-
 def home(request):
     insumos = Insumo.objects.all()
     total_unidades = sum(i.total_unidades_reales for i in insumos)
     total_cajas = sum(i.stock_actual_cajas for i in insumos)
     total_backup = sum(i.backup_unidades for i in insumos)
     
-    hace_dos_semanas = datetime.now() - timedelta(days=14)
+    ahora = datetime.now()
+    hace_dos_semanas = ahora - timedelta(days=14)
     salidas_recientes = Salida.objects.filter(fecha__gte=hace_dos_semanas)
     unidades_consumidas = salidas_recientes.aggregate(Sum('cantidad'))['cantidad__sum'] or 0
     
+    # Mantenemos tu cálculo de consumo real
     promedio_ia = unidades_consumidas / 14
     consumo_final = max(promedio_ia, 8) 
     
     techo_fijo = 400
     porcentaje = min((total_unidades / techo_fijo) * 100, 100)
     
+    # --- LA AUTONOMÍA SE QUEDA COMO ESTABA ---
+    # Esto sigue calculando los "104 días" (o lo que toque) según tus sondas
     autonomia = int(total_unidades // consumo_final) if consumo_final > 0 else 0
-    proximo_pedido = datetime.now() + timedelta(days=autonomia)
+    
+    # --- EL PEDIDO SÍ SE FIJA AL DÍA 15 ---
+    if ahora.day >= 15:
+        # Si es 15 o más, mostramos el 15 del mes que viene
+        proximo_mes = ahora.replace(day=28) + timedelta(days=4)
+        proximo_pedido = proximo_mes.replace(day=15)
+    else:
+        # Si todavía no llegamos al 15, es el 15 de este mes
+        proximo_pedido = ahora.replace(day=15)
 
     hay_os_pendiente = Envio.objects.filter(estado='tramite', tipo='os').exists()
     hay_backup_pendiente = Envio.objects.filter(estado='tramite', tipo='backup').exists()
@@ -37,13 +48,14 @@ def home(request):
         'total_cajas': total_cajas,
         'total_backup': total_backup,
         'consumo_diario': round(consumo_final, 1),
-        'autonomia': autonomia,
+        'autonomia': autonomia, # Se sigue viendo en el panel izquierdo
         'porcentaje': porcentaje,
-        'proximo_pedido': proximo_pedido,
+        'proximo_pedido': proximo_pedido, # Se ve en el cartel de la derecha
         'hay_os_pendiente': hay_os_pendiente,
         'hay_backup_pendiente': hay_backup_pendiente,
     }
     return render(request, 'medicine_control/home.html', context)
+
 
 def cargar_insumo(request):
     if request.method == 'POST':
