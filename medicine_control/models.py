@@ -10,33 +10,41 @@ class Insumo(models.Model):
     consumo_diario = models.FloatField(default=0) 
     backup_unidades = models.IntegerField(default=0)
 
-    # --- INYECCIÓN DE INTELIGENCIA (PROPIEDADES SMART) ---
-
     @property
     def total_unidades_reales(self):
-        """Calcula el stock total combinando cajas y unidades sueltas."""
         return (self.stock_actual_cajas * self.unidades_por_caja) + self.backup_unidades
+
+    # --- NUEVAS PROPIEDADES PARA EL DESGLOSE ---
+    
+    @property
+    def unidades_normales(self):
+        """Solo lo que hay en cajas."""
+        return self.stock_actual_cajas * self.unidades_por_caja
+
+    @property
+    def autonomia_normal_dias(self):
+        """Autonomía sin contar el backup."""
+        consumo = self.consumo_diario if self.consumo_diario > 0 else 8
+        return int(self.unidades_normales // consumo)
+
+    @property
+    def autonomia_seguridad_dias(self):
+        """Autonomía exclusivamente del backup."""
+        consumo = self.consumo_diario if self.consumo_diario > 0 else 8
+        return int(self.backup_unidades // consumo)
 
     @property
     def autonomia_smart(self):
-        """IA Predictiva: Calcula cuántos días quedan según el consumo actual."""
-        consumo = self.consumo_diario if self.consumo_diario > 0 else 8
-        return int(self.total_unidades_reales // consumo)
+        """Total (Normal + Seguridad)."""
+        return self.autonomia_normal_dias + self.autonomia_seguridad_dias
 
     @property
     def semaforo_estado(self):
-        """IA de Diagnóstico: Determina el riesgo de quiebre de stock."""
         dias = self.autonomia_smart
         if dias > 40: return "OPTIMO"
         if dias > 20: return "ESTABLE"
         if dias > 10: return "ALERTA"
         return "CRITICO"
-
-    def obtener_ultimo_lugar(self):
-        ultimo_pedido = self.pedido_set.order_by('-fecha', '-id').first()
-        if ultimo_pedido:
-            return ultimo_pedido.lugar_compra
-        return "Sin registros"
 
     def __str__(self):
         return self.nombre

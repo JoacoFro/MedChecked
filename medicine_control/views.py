@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from .telegram_utils import enviar_alerta
 import json
 
+
 def home(request):
     insumos = Insumo.objects.all()
     total_unidades = sum(i.total_unidades_reales for i in insumos)
@@ -95,18 +96,26 @@ def lista_insumos(request):
     pedidos_qs = Pedido.objects.all().order_by('-fecha') 
     salidas_qs = Salida.objects.all().order_by('-fecha')
 
-    # --- CÁLCULOS GLOBALES (Independientes de la búsqueda) ---
+    # --- CÁLCULOS GLOBALES ---
     total_unidades = sum(i.total_unidades_reales for i in insumos_qs)
-    total_cajas = sum(i.stock_actual_cajas for i in insumos_qs)
-    total_backup = sum(i.backup_unidades for i in insumos_qs)
+    total_normal_un = sum(i.unidades_normales for i in insumos_qs)
+    total_backup_un = sum(i.backup_unidades for i in insumos_qs)
     
+    total_cajas_normal = sum(i.stock_actual_cajas for i in insumos_qs)
+    
+    # Lógica de Consumo IA (Promedio 14 días)
     hace_dos_semanas = datetime.now() - timedelta(days=14)
     salidas_recientes = Salida.objects.filter(fecha__gte=hace_dos_semanas)
     unidades_consumidas = salidas_recientes.aggregate(Sum('cantidad'))['cantidad__sum'] or 0
     
     promedio_ia = unidades_consumidas / 14
     consumo_final = max(promedio_ia, 8)
-    autonomia = int(total_unidades // consumo_final) if consumo_final > 0 else 0
+    
+    # Cálculos de Autonomía Desglosada
+    autonomia_total = int(total_unidades // consumo_final) if consumo_final > 0 else 0
+    autonomia_normal = int(total_normal_un // consumo_final) if consumo_final > 0 else 0
+    autonomia_backup = int(total_backup_un // consumo_final) if consumo_final > 0 else 0
+
     techo_fijo = 400
     porcentaje = min((total_unidades / techo_fijo) * 100, 100)
 
@@ -129,11 +138,18 @@ def lista_insumos(request):
         'insumos': insumos_qs, 
         'ingresos': pedidos_qs, 
         'salidas': salidas_qs,
+        # Métricas para Cards Desplegables
         'total_unidades': total_unidades,
-        'total_cajas': total_cajas,
-        'total_backup': total_backup,
+        'total_normal_un': total_normal_un,
+        'total_backup_un': total_backup_un,
+        
+        'total_cajas_normal': total_cajas_normal,
+        
+        'autonomia': autonomia_total,
+        'aut_normal': autonomia_normal,
+        'aut_backup': autonomia_backup,
+        
         'consumo_diario': round(consumo_final, 1),
-        'autonomia': autonomia,
         'porcentaje': porcentaje,
         'query': query,
     }

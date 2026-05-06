@@ -2,21 +2,39 @@
 
 {% block contenido %}
 
+<!-- DASHBOARD DE MÉTRICAS DESPLEGABLES -->
 <div class="row g-3 mb-4">
+    <!-- CARD: TOTAL GLOBAL -->
     <div class="col">
-        <div class="custom-card shadow text-center p-3 h-100">
+        <div class="custom-card shadow text-center p-3 h-100" onclick="toggleCard(this)" style="cursor: pointer; transition: transform 0.2s;">
             <span class="text-secondary small text-uppercase">Total Global</span>
             <h3 class="fw-bold mt-2 text-info">{{ total_unidades }}</h3>
             <small class="text-secondary">Unidades</small>
+            
+            <!-- Detalle oculto -->
+            <div class="card-detail mt-3 pt-2 border-top border-secondary border-opacity-25" style="display: none; text-align: left;">
+                <p class="mb-1 small text-white">📦 Normal: <strong>{{ total_normal_un }}</strong></p>
+                <p class="mb-0 small text-info">🛡️ Seguridad: <strong>{{ total_backup_un }}</strong></p>
+            </div>
         </div>
     </div>
+
+    <!-- CARD: TOTAL CAJAS -->
     <div class="col">
-        <div class="custom-card shadow text-center p-3 h-100">
+        <div class="custom-card shadow text-center p-3 h-100" onclick="toggleCard(this)" style="cursor: pointer;">
             <span class="text-secondary small text-uppercase">Total Cajas</span>
-            <h3 class="fw-bold mt-2 text-white">{{ total_cajas }}</h3>
+            <h3 class="fw-bold mt-2 text-white">{{ total_cajas_normal|add:"1" }}</h3>
             <small class="text-secondary">En stock</small>
+
+            <!-- Detalle oculto (Asumiendo 1 caja siempre como backup de seguridad) -->
+            <div class="card-detail mt-3 pt-2 border-top border-secondary border-opacity-25" style="display: none; text-align: left;">
+                <p class="mb-1 small text-white">📦 Stock BNA: <strong>{{ total_cajas_normal }}</strong></p>
+                <p class="mb-0 small text-warning">🛡️ Reserva: <strong>1</strong></p>
+            </div>
         </div>
     </div>
+
+    <!-- CARD: SONDAS SUELTAS (RESERVA) -->
     <div class="col">
         <div class="custom-card shadow p-3 h-100" style="border: 1px solid rgba(0, 242, 255, 0.3); background: rgba(13, 110, 253, 0.08); position: relative; display: flex; flex-direction: column; justify-content: center;">
             <div style="position: absolute; left: 15px; top: 50%; transform: translateY(-45%);">
@@ -31,15 +49,25 @@
             </div>
         </div>
     </div>
+
+    <!-- CARD: AUTONOMÍA -->
     <div class="col">
-        <div class="custom-card shadow text-center p-3 h-100">
+        <div class="custom-card shadow text-center p-3 h-100" onclick="toggleCard(this)" style="cursor: pointer;">
             <span class="text-secondary small text-uppercase">Autonomía</span>
             <h3 class="fw-bold mt-2 {% if autonomia < 10 %}text-danger{% elif autonomia < 20 %}text-warning{% else %}text-success{% endif %}">
                 {{ autonomia }}
             </h3>
             <small class="text-secondary">Días libres</small>
+
+            <!-- Detalle oculto -->
+            <div class="card-detail mt-3 pt-2 border-top border-secondary border-opacity-25" style="display: none; text-align: left;">
+                <p class="mb-1 small text-white">⏳ Normal: <strong>{{ aut_normal }} días</strong></p>
+                <p class="mb-0 small text-success">🆘 Seguridad: <strong>{{ aut_backup }} días</strong></p>
+            </div>
         </div>
     </div>
+
+    <!-- CARD: CONSUMO IA -->
     <div class="col">
         <div class="custom-card shadow text-center p-3 h-100">
             <span class="text-secondary small text-uppercase">Consumo IA</span>
@@ -49,6 +77,7 @@
     </div>
 </div>
 
+<!-- ANÁLISIS IA -->
 <div class="row mb-4">
     <div class="col-12">
         <div class="custom-card shadow p-3" style="background: rgba(13, 110, 253, 0.05); border: 1px dashed rgba(13, 202, 240, 0.3);">
@@ -73,6 +102,7 @@
     </div>
 </div>
 
+<!-- BARRA DE PROGRESO -->
 <div class="row mb-4">
     <div class="col-12">
         <div class="custom-card shadow p-4">
@@ -93,6 +123,7 @@
     </div>
 </div>
 
+<!-- TABLA DE INGRESOS -->
 <div class="row mb-5">
     <div class="col-12">
         <div class="custom-card shadow">
@@ -148,6 +179,7 @@
     </div>
 </div>
 
+<!-- TABLA DE SALIDAS -->
 <div class="row">
     <div class="col-12">
         <div class="custom-card shadow">
@@ -212,5 +244,29 @@
         </div>
     </div>
 </div>
+
+<!-- SCRIPTS PARA EL DESPLIEGUE -->
+<script>
+function toggleCard(cardElement) {
+    const detail = cardElement.querySelector('.card-detail');
+    if (!detail) return;
+    
+    const isHidden = detail.style.display === 'none';
+    
+    // Cerramos los demás detalles para que se vea limpio
+    document.querySelectorAll('.card-detail').forEach(d => {
+        d.style.display = 'none';
+        d.parentElement.style.transform = 'scale(1)';
+    });
+    
+    if (isHidden) {
+        detail.style.display = 'block';
+        cardElement.style.transform = 'scale(1.02)';
+    } else {
+        detail.style.display = 'none';
+        cardElement.style.transform = 'scale(1)';
+    }
+}
+</script>
 
 {% endblock %}

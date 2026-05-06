@@ -3,13 +3,16 @@ import sys
 import django
 import logging
 import asyncio
+import pytz
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 import google.generativeai as genai
 from django.utils import timezone
-from datetime import datetime
+# Import indispensable para compatibilidad Async-Django
+from asgiref.sync import sync_to_async
 
 # --- 1. PUENTE CON DJANGO ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,9 +23,16 @@ load_dotenv(BASE_DIR / ".env")
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
-from medicine_control.models import Insumo, Pedido, Salida
+from medicine_control.models import Insumo, Pedido, Salida, Envio
 
-# --- 2. FUNCIONES DE LÓGICA (TOOLS PARA LA IA) ---
+# --- 2. WRAPPERS PARA DJANGO (SOLUCIÓN PARA RENDER) ---
+
+@sync_to_async
+def obtener_insumos_db():
+    """Puente asíncrono para consultar la base de datos de Neon."""
+    return list(Insumo.objects.all())
+
+# --- 3. FUNCIONES DE LÓGICA (TOOLS PARA LA IA) ---
 
 def consultar_estado_stock():
     """Consulta el stock detallado de todos los insumos y su autonomía."""
@@ -34,7 +44,7 @@ def consultar_estado_stock():
         reporte = "📊 Estado Actual:\n"
         for i in insumos:
             aut = i.autonomia_smart
-            emoji = "🟢" if aut >= 15 else "🟡" if aut >= 7 else "🔴"
+            emoji = "🔴" if aut <= 10 else "🟡" if aut <= 15 else "🟢"
             reporte += (f"- {i.nombre}: {i.total_unidades_reales} unidades "
                         f"({i.stock_actual_cajas} cajas, {i.backup_unidades} backup). "
                         f"Autonomía: {emoji} {aut} días.\n")
@@ -43,190 +53,144 @@ def consultar_estado_stock():
         return f"Error al consultar stock: {e}"
 
 def registrar_movimiento(accion: str, cantidad: int, tipo_stock: str):
-    """
-    Registra una carga o descarga de insumos.
-    accion: 'cargar' o 'descargar'
-    cantidad: número entero
-    tipo_stock: 'cajas' (para Obra Social) o 'unidades' (para Seguridad/Backup)
-    """
+    """Registra carga o descarga de insumos (cajas o unidades)."""
     try:
         insumo = Insumo.objects.filter(nombre__icontains="Sonda").first()
-        if not insumo:
-            return "Error: No encontré el insumo 'Sonda'."
-
+        if not insumo: return "Error: No encontré el insumo 'Sonda'."
         ahora = timezone.now()
         
         if accion == "cargar":
             if tipo_stock == "cajas":
                 insumo.stock_actual_cajas += cantidad
-                unidades = cantidad * 30
                 Pedido.objects.create(insumo=insumo, tipo='normal', tipo_stock='stock_normal', 
-                                     cantidad=unidades, fecha=ahora, lugar_compra="Astrana IA (Cajas)")
+                                     cantidad=cantidad*30, fecha=ahora, lugar_compra="Astrana IA")
             else:
                 insumo.backup_unidades += cantidad
                 Pedido.objects.create(insumo=insumo, tipo='propio', tipo_stock='seguridad', 
-                                     cantidad=cantidad, fecha=ahora, lugar_compra="Astrana IA (Backup)")
+                                     cantidad=cantidad, fecha=ahora, lugar_compra="Astrana IA")
         
         elif accion == "descargar":
             if tipo_stock == "cajas":
                 insumo.stock_actual_cajas -= cantidad
-                Salida.objects.create(insumo=insumo, cantidad_cajas=cantidad, 
-                                     cantidad=cantidad*30, tipo_stock='stock_normal')
+                Salida.objects.create(insumo=insumo, cantidad_cajas=cantidad, cantidad=cantidad*30, tipo_stock='stock_normal')
             else:
                 insumo.backup_unidades -= cantidad
-                Salida.objects.create(insumo=insumo, cantidad_cajas=0, 
-                                     cantidad=cantidad, tipo_stock='seguridad')
+                Salida.objects.create(insumo=insumo, cantidad_cajas=0, cantidad=cantidad, tipo_stock='seguridad')
 
         insumo.save()
-        return (f"✅ Registro exitoso. Nuevo total de {insumo.nombre}: {insumo.total_unidades_reales} unidades. "
-                f"Estado: {insumo.semaforo_estado}")
+        return f"✅ Registro exitoso. Nuevo total: {insumo.total_unidades_reales} un. ({insumo.semaforo_estado})"
     except Exception as e:
         return f"Error técnico: {e}"
-    
-def gestionar_tramites_os(accion, nombre_insumo, tipo_tramite='os'):
-    try:
-        from medicine_control.models import Envio, Insumo
-        from django.utils import timezone
-        
-        envio = Envio.objects.filter(estado='tramite', tipo=tipo_tramite).last()
 
-        if not envio:
-            return f"No encontré ningún trámite de {tipo_tramite} pendiente."
-
-        if accion == "marcar_recibido":
-            # Buscamos el insumo para sumarle las unidades
-            insumo = Insumo.objects.get(nombre__icontains=nombre_insumo)
-            
-            if tipo_tramite == 'os':
-                # Si es OS, sumamos cajas (10 cajas por defecto)
-                insumo.stock_actual_cajas += 10
-                detalle = "10 cajas al Stock Normal"
-            else:
-                # Si es Backup, sumamos a backup_unidades lo que dice el envío
-                unidades = envio.cantidad_pedida
-                insumo.backup_unidades += unidades
-                detalle = f"{unidades} unidades al Stock de Backup"
-
-            insumo.save()
-
-            # Cerramos el trámite
-            envio.estado = 'recibido'
-            envio.fecha_cierre = timezone.now().date()
-            envio.save()
-            
-            return f"🟢 ¡Recibido! Se sumaron {detalle} a {insumo.nombre}."
-            
-    except Exception as e:
-        return f"Error al gestionar trámite: {e}"
-    
 def obtener_resumen_pedidos():
-    """
-    Resumen definitivo: Consulta la tabla Envio (web) y maneja fechas correctamente.
-    """
+    """Consulta trámites de OS y Backup pendientes."""
     try:
-        from medicine_control.models import Envio
         hoy = timezone.now().date()
-        
-        # 1. Buscamos el trámite de OS de este mes para el "Doble Check"
-        envio_os_mes = Envio.objects.filter(
-            tipo='os',
-            fecha_solicitud__month=hoy.month,
-            fecha_solicitud__year=hoy.year
-        ).last()
-
+        envio_os_mes = Envio.objects.filter(tipo='os', fecha_solicitud__month=hoy.month).last()
         txt = "📋 *Estado de Gestión Mensual:*\n\n"
-        
-        # Lógica de validación contra el calendario (Día 15)
         if not envio_os_mes:
-            if hoy.day <= 15:
-                txt += f"⚠️ *Atención:* No iniciaste el trámite de OS (Límite: 15/{hoy.month}).\n\n"
-            else:
-                txt += f"🚨 *Alerta:* Pasó el día 15 y no hay trámite de OS registrado.\n\n"
+            txt += "⚠️ *Atención:* No iniciaste el trámite de OS este mes.\n\n"
         else:
-            # Aquí corregimos lo que me decías: ¿Está abierto o completado?
-            if envio_os_mes.estado == 'recibido':
-                txt += "✅ *Trámite OS:* Ya fue iniciado y RECIBIDO correctamente. 📦\n\n"
-            else:
-                txt += "⏳ *Trámite OS:* Iniciado, pero figura PENDIENTE de recepción.\n\n"
-
-        # 2. Listado de lo que está "En Trámite" actualmente (los botones verdes de la web)
-        pendientes_web = Envio.objects.filter(estado='tramite')
-
-        if not pendientes_web.exists():
-            txt += "No hay otros trámites pendientes en el panel web. ✅"
-        else:
-            txt += "*Otros envíos en curso:*\n"
-            for e in pendientes_web:
-                # Evitamos el error de 'datetime.date' object has no attribute 'date'
-                f_sol = e.fecha_solicitud.date() if hasattr(e.fecha_solicitud, 'date') else e.fecha_solicitud
-                dias = (hoy - f_sol).days
-                
-                tipo_txt = "🛡️ Back Up" if e.tipo == 'backup' else "📦 Obra Social"
-                txt += (f"🔹 {tipo_txt}\n"
-                        f"   • Estado: {e.get_estado_display()}\n"
-                        f"   • Hace: {dias} días.\n")
+            txt += f"✅ *Trámite OS:* {envio_os_mes.get_estado_display()}\n\n"
         
+        pendientes = Envio.objects.filter(estado='tramite')
+        if pendientes.exists():
+            txt += "*En curso:*\n"
+            for e in pendientes:
+                txt += f"🔹 {e.tipo.upper()}: Hace {(hoy - e.fecha_solicitud.date()).days} días.\n"
         return txt
     except Exception as e:
         return f"Error en resumen: {e}"
-def iniciar_tramite_backup(tipo_insumo, cantidad):
-    try:
-        from medicine_control.models import Envio
+
+# --- 4. RUTINA DE MONITOREO AUTOMÁTICO (CORREGIDA) ---
+
+async def rutina_monitoreo_astrana(application):
+    """Chequea umbrales a las 10 y 20hs, y envía resumen los viernes."""
+    CHAT_ID = 8034926015 
+    tz = pytz.timezone('America/Argentina/Buenos_Aires')
+    ultimo_chequeo_hora = None
+    ultimo_resumen_dia = None
+
+    while True:
+        try:
+            ahora = datetime.now(tz)
+            hoy_str = ahora.strftime('%Y-%m-%d')
+            
+            # Chequeo Diario (10:00 y 20:00)
+            if ahora.hour in [10, 20] and ultimo_chequeo_hora != ahora.hour:
+                # LLAMADA ASYNC A LA DB
+                insumos = await obtener_insumos_db()
+                alertas = []
+                for i in insumos:
+                    if (i.stock_actual_cajas * 30) <= 30:
+                        alertas.append(f"📦 *Stock Normal:* Solo queda {i.stock_actual_cajas} caja de {i.nombre}.")
+                    
+                    if i.backup_unidades <= 56:
+                        alertas.append(f"🛡️ *Seguridad:* {i.nombre} tiene solo {i.backup_unidades} un. de backup.")
+                    
+                    if i.autonomia_smart <= 10:
+                        alertas.append(f"🚨 *Crítico:* {i.nombre} con autonomía de {i.autonomia_smart} días.")
+
+                if alertas:
+                    msg = "⚠️ *ASTRANA: ALERTAS DE SISTEMA*\n\n" + "\n".join(alertas)
+                    await application.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode='Markdown')
+                ultimo_chequeo_hora = ahora.hour
+
+            # Resumen Semanal (Viernes 10:00)
+            if ahora.weekday() == 4 and ahora.hour == 10 and ultimo_resumen_dia != hoy_str:
+                insumos = await obtener_insumos_db()
+                resumen = "📊 *RESUMEN SEMANAL DE INSUMOS*\n\n"
+                for i in insumos:
+                    resumen += (f"🔹 *{i.nombre}*\n"
+                                f"   • Cajas (OS): {i.stock_actual_cajas}\n"
+                                f"   • Backup: {i.backup_unidades} un.\n"
+                                f"   • Autonomía: {i.autonomia_smart} días\n\n")
+                await application.bot.send_message(chat_id=CHAT_ID, text=resumen, parse_mode='Markdown')
+                ultimo_resumen_dia = hoy_str
+
+        except Exception as e:
+            print(f"Error en monitoreo: {e}")
         
-        # Como Envio no tiene FK a Insumo, guardamos el nombre en las notas
-        nuevo_envio = Envio.objects.create(
-            tipo='backup',
-            estado='tramite',
-            cantidad_pedida=int(cantidad),
-            notas=f"Pedido de Backup para: {tipo_insumo}"
-        )
-        return f"✅ Trámite de Backup iniciado por {cantidad} unidades."
-    except Exception as e:
-        return f"Error al iniciar: {e}"
-    
-# --- 3. CONFIGURACIÓN DE IA ---
+        await asyncio.sleep(60)
+
+# --- 5. CONFIGURACIÓN DE IA Y BOT ---
+
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(
     model_name='models/gemini-flash-latest', 
-    tools=[consultar_estado_stock, registrar_movimiento, gestionar_tramites_os, obtener_resumen_pedidos]
+    tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos]
 )
 
-# --- 4. LÓGICA DEL BOT ---
 historiales = {}
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_text = update.message.text
-    
     if user_id not in historiales:
-        prompt_sistema = (
-            "Sos Astrana, asistente de la IA de Joaco. Tenés acceso al sistema MedicineControl.\n\n"
-            "INSTRUCCIONES DE USO DE HERRAMIENTAS:\n"
-            "1. Si Joaco pregunta 'cómo estamos' o sobre el stock, usá 'consultar_estado_stock'.\n"
-            "2. Si quiere cargar/descargar stock manualmente, usá 'registrar_movimiento'.\n"
-            "3. IMPORTANTE: Si Joaco dice 'inicia un trámite' o 'empezar gestión de OS', usá 'gestionar_tramites_os' con accion='iniciar_tramite'.\n"
-            "4. Si Joaco dice 'recibí el pedido' o 'llegaron las cajas', usá 'gestionar_tramites_os' con accion='marcar_recibido'.\n"
-            "5. Si pregunta por pedidos pendientes o el resumen mensual, usá 'obtener_resumen_pedidos'.\n\n"
-            "Mantené un tono profesional pero cercano. Siempre que realices una acción, confirma que se impactó en el sistema."
-        )
-        historiales[user_id] = model.start_chat(
-            history=[{"role": "user", "parts": [prompt_sistema]},
-                     {"role": "model", "parts": ["Entendido Joaco. Sistema y herramientas de trámites sincronizadas. ¿Qué gestión iniciamos?"]}],
-            enable_automatic_function_calling=True
-        )
+        prompt = "Sos Astrana, asistente de Joaco. Tono profesional. Usá las herramientas para gestionar stock."
+        historiales[user_id] = model.start_chat(history=[], enable_automatic_function_calling=True)
+        # Se lanza el prompt inicial de forma segura
+        await asyncio.to_thread(historiales[user_id].send_message, prompt)
 
     try:
-        response = await asyncio.to_thread(historiales[user_id].send_message, user_text)
+        response = await asyncio.to_thread(historiales[user_id].send_message, update.message.text)
         await update.message.reply_text(response.text)
     except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
+        print(f"Error en respuesta: {e}")
+
+# --- 6. PUNTO DE ENTRADA ---
+
+async def post_init(application):
+    """Inicia la rutina de fondo sin bloquear el bot."""
+    asyncio.create_task(rutina_monitoreo_astrana(application))
 
 if __name__ == '__main__':
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), responder))
-    print("🚀 Astrana IA (Versión Evolucionada) iniciando...")
-    application.run_polling()
     
+    application.post_init = post_init
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), responder))
+    
+    print("🚀 Astrana IA desplegando en Render...")
+    application.run_polling()
