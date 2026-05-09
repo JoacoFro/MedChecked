@@ -12,17 +12,19 @@ import json
 
 def home(request):
     insumos = Insumo.objects.all()
-    total_unidades = sum(i.total_unidades_reales for i in insumos)
-    total_cajas = sum(i.stock_actual_cajas for i in insumos)
-    total_backup = sum(i.backup_unidades for i in insumos)
     
-    # --- NUEVOS CÁLCULOS PARA EL DESGLOSE ---
-    # Calculamos el stock "Normal" (restando la reserva de seguridad)
-    total_normal_un = total_unidades - total_backup
-    # Calculamos las cajas normales (restando la caja de reserva que suele ser 1)
-    total_cajas_normal = max(total_cajas - 1, 0) 
-    # ----------------------------------------
+    # Cálculos base de stock
+    total_unidades = sum(i.total_unidades_reales for i in insumos)
+    total_backup_uds = sum(i.backup_unidades for i in insumos) # Reserva de seguridad en unidades
+    
+    # --- CORRECCIÓN DE CAJAS PARA QUE COINCIDA CON LA LISTA ---
+    # Sumamos las cajas que vienen de la base de datos (Stock BNA: 12)
+    cajas_bna = sum(i.stock_actual_cajas for i in insumos)
+    # Definimos el total visual sumando la caja de reserva fija (Total: 13)
+    total_cajas_visual = cajas_bna + 1 
+    # ---------------------------------------------------------
 
+    # Lógica de consumo IA
     ahora = datetime.now()
     hace_dos_semanas = ahora - timedelta(days=14)
     salidas_recientes = Salida.objects.filter(fecha__gte=hace_dos_semanas)
@@ -31,26 +33,32 @@ def home(request):
     promedio_ia = unidades_consumidas / 14
     consumo_final = max(promedio_ia, 8) 
     
+    # Estado de stock y autonomía
     techo_fijo = 400
     porcentaje = min((total_unidades / techo_fijo) * 100, 100)
     autonomia = int(total_unidades // consumo_final) if consumo_final > 0 else 0
     
+    # Cálculo de fecha de próximo pedido (Día 15)
     if ahora.day >= 15:
         proximo_mes = ahora.replace(day=28) + timedelta(days=4)
         proximo_pedido = proximo_mes.replace(day=15)
     else:
         proximo_pedido = ahora.replace(day=15)
 
+    # Verificación de trámites pendientes
     hay_os_pendiente = Envio.objects.filter(estado='tramite', tipo='os').exists()
     hay_backup_pendiente = Envio.objects.filter(estado='tramite', tipo='backup').exists()
 
+    # Diccionario de contexto para el template
     context = {
-        'total_unidades': total_unidades,      # Las 444 unidades totales
-        'total_normal_un': total_unidades - total_backup, # Las unidades menos la reserva
-        'total_backup_un': total_backup,       # El valor de la reserva de seguridad
-        'total_cajas': total_cajas,            # AQUÍ: Debe ser 13 (Total real en estantería)
-        'total_cajas_normal': total_cajas - 1, # AQUÍ: Debe ser 12 (Stock para uso diario)
-        'total_backup': total_backup,          # Las sondas sueltas (84 en tu captura)
+        'total_unidades': total_unidades,                 # Las 444 unidades totales
+        'total_normal_un': total_unidades - total_backup_uds, # Detalle: Normal
+        'total_backup_un': total_backup_uds,             # Detalle: Seguridad
+        
+        'total_cajas': total_cajas_visual,               # El "13" grande del Inicio
+        'total_cajas_normal': cajas_bna,                 # El "12" que dice "Stock BNA"
+        
+        'total_backup': total_backup_uds,                # El "84" de las Sondas sueltas
         'consumo_diario': round(consumo_final, 1),
         'autonomia': autonomia,
         'porcentaje': porcentaje,
@@ -58,8 +66,8 @@ def home(request):
         'hay_os_pendiente': hay_os_pendiente,
         'hay_backup_pendiente': hay_backup_pendiente,
     }
+    
     return render(request, 'medicine_control/home.html', context)
-
 
 def cargar_insumo(request):
     if request.method == 'POST':
