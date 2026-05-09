@@ -2,14 +2,14 @@
 
 {% block contenido %}
 <div class="row g-3 mb-4 align-items-start">
-    <!-- CARD: TOTAL GLOBAL (Agregado onclick y cursor) -->
+    <!-- CARD: TOTAL GLOBAL -->
     <div class="col">
         <div class="custom-card shadow text-center p-3" onclick="toggleCard(this)" style="cursor: pointer;">
             <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Total Global</span>
             <h3 class="fw-bold mt-2 text-info" style="text-shadow: 0 0 10px rgba(13, 202, 240, 0.4);">{{ total_unidades }}</h3>
             <small class="text-secondary">Unidades Reales</small>
             
-            <!-- Detalle oculto -->
+            <!-- Detalle con datos -->
             <div class="card-detail mt-3 pt-2 border-top border-secondary border-opacity-25" style="display: none; text-align: left;">
                 <p class="mb-1 small text-white">📦 Normal: <strong>{{ total_normal_un }}</strong></p>
                 <p class="mb-0 small text-info">🛡️ Seguridad: <strong>{{ total_backup_un }}</strong></p>
@@ -24,7 +24,7 @@
             <h3 class="fw-bold mt-2 text-white">{{ total_cajas }}</h3>
             <small class="text-secondary">En stock</small>
 
-            <!-- Detalle oculto -->
+            <!-- Detalle con datos -->
             <div class="card-detail mt-3 pt-2 border-top border-secondary border-opacity-25" style="display: none; text-align: left;">
                 <p class="mb-1 small text-white">📦 Stock BNA: <strong>{{ total_cajas_normal }}</strong></p>
                 <p class="mb-0 small text-warning">🛡️ Reserva: <strong>1</strong></p>
@@ -32,7 +32,7 @@
         </div>
     </div>
 
-    <!-- CARD: RESERVA (Esta suele ser informativa, pero le agregamos el cursor por consistencia) -->
+    <!-- CARD: RESERVA (Sondas sueltas) -->
     <div class="col">
         <div class="custom-card shadow p-3" style="border: 1px solid rgba(0, 242, 255, 0.3); background: rgba(13, 110, 253, 0.08); position: relative; display: flex; flex-direction: column; justify-content: center; min-height: 115px;">
             <div style="position: absolute; left: 15px; top: 50%; transform: translateY(-45%);">
