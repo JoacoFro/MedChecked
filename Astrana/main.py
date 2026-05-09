@@ -92,11 +92,11 @@ def obtener_resumen_pedidos():
         connection.close_if_unusable_or_obsolete() # Limpieza antes de consulta
         hoy = timezone.now().date()
         envio_os_mes = Envio.objects.filter(tipo='os', fecha_solicitud__month=hoy.month).last()
-        txt = "📋 *Estado de Gestión Mensual:*\n\n"
+        txt = "📋 Estado de Gestión Mensual:\n\n"
         if not envio_os_mes:
             txt += "⚠️ *Atención:* No iniciaste el trámite de OS este mes.\n\n"
         else:
-            txt += f"✅ *Trámite OS:* {envio_os_mes.get_estado_display()}\n\n"
+            txt += f"✅ Trámite OS: {envio_os_mes.get_estado_display()}\n\n"
         
         pendientes = Envio.objects.filter(estado='tramite')
         if pendientes.exists():
@@ -127,13 +127,13 @@ async def rutina_monitoreo_astrana(application):
                 alertas = []
                 for i in insumos:
                     if (i.stock_actual_cajas * 30) <= 30:
-                        alertas.append(f"📦 *Stock Normal:* Solo queda {i.stock_actual_cajas} caja de {i.nombre}.")
+                        alertas.append(f"📦 Stock Normal: Solo queda {i.stock_actual_cajas} caja de {i.nombre}.")
                     
                     if i.backup_unidades <= 56:
-                        alertas.append(f"🛡️ *Seguridad:* {i.nombre} tiene solo {i.backup_unidades} un. de backup.")
+                        alertas.append(f"🛡️ Seguridad: {i.nombre} tiene solo {i.backup_unidades} un. de backup.")
                     
                     if i.autonomia_smart <= 10:
-                        alertas.append(f"🚨 *Crítico:* {i.nombre} con autonomía de {i.autonomia_smart} días.")
+                        alertas.append(f"🚨 Crítico: {i.nombre} con autonomía de {i.autonomia_smart} días.")
 
                 if alertas:
                     msg = "⚠️ *ASTRANA: ALERTAS DE SISTEMA*\n\n" + "\n".join(alertas)
