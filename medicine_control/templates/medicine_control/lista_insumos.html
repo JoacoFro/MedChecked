@@ -3,17 +3,16 @@
 {% block contenido %}
 
 <!-- DASHBOARD DE MÉTRICAS DESPLEGABLES -->
-<!-- Agregamos align-items-start para que las cards no se estiren entre sí -->
-<div class="row g-3 mb-4 align-items-start">
+<!-- Usamos row-cols-md-5 para que las 5 cards entren en una sola fila -->
+<div class="row g-3 mb-4 align-items-start row-cols-1 row-cols-md-5">
+    
     <!-- CARD: TOTAL GLOBAL -->
     <div class="col">
-        <!-- Quitamos h-100 para que solo crezca la que se expande -->
         <div class="custom-card shadow text-center p-3" onclick="toggleCard(this)" style="cursor: pointer; transition: transform 0.2s;">
             <span class="text-secondary small text-uppercase">Total Global</span>
             <h3 class="fw-bold mt-2 text-info">{{ total_unidades }}</h3>
             <small class="text-secondary">Unidades</small>
             
-            <!-- Detalle oculto -->
             <div class="card-detail mt-3 pt-2 border-top border-secondary border-opacity-25" style="display: none; text-align: left;">
                 <p class="mb-1 small text-white">📦 Normal: <strong>{{ total_normal_un }}</strong></p>
                 <p class="mb-0 small text-info">🛡️ Seguridad: <strong>{{ total_backup_un }}</strong></p>
@@ -38,15 +37,15 @@
     <!-- CARD: SONDAS SUELTAS (RESERVA) -->
     <div class="col">
         <div class="custom-card shadow p-3" style="border: 1px solid rgba(0, 242, 255, 0.3); background: rgba(13, 110, 253, 0.08); position: relative; display: flex; flex-direction: column; justify-content: center; min-height: 115px;">
-            <div style="position: absolute; left: 15px; top: 50%; transform: translateY(-45%);">
-                <i class="bi bi-shield-shaded" style="font-size: 2.8rem; color: #00f2ff; text-shadow: 0 0 15px #00f2ff;"></i>
+            <div style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%);">
+                <i class="bi bi-shield-shaded" style="font-size: 2.2rem; color: #00f2ff; text-shadow: 0 0 15px #00f2ff;"></i>
             </div>
             <div class="text-center w-100">
-                <span class="text-secondary small text-uppercase" style="letter-spacing: 1px;">Sondas Sueltas</span>
-                <h3 class="fw-bold mt-2 mb-0" style="color: #00f2ff; text-shadow: 0 0 10px rgba(0, 242, 255, 0.5); line-height: 1.1;">
+                <span class="text-secondary small text-uppercase" style="letter-spacing: 1px; font-size: 0.7rem;">Sondas Sueltas</span>
+                <h3 class="fw-bold mt-1 mb-0" style="color: #00f2ff; text-shadow: 0 0 10px rgba(0, 242, 255, 0.5); line-height: 1.1;">
                     {{ total_backup }}
                 </h3>
-                <small class="text-info opacity-75 fw-bold" style="font-size: 0.75rem;">Reserva</small>
+                <small class="text-info opacity-75 fw-bold" style="font-size: 0.7rem;">Reserva</small>
             </div>
         </div>
     </div>
@@ -66,17 +65,16 @@
             </div>
         </div>
     </div>
-</div>
 
-    <!-- CARD: CONSUMO IA -->
+    <!-- CARD: CONSUMO IA (Ahora dentro de la fila) -->
     <div class="col">
-        <div class="custom-card shadow text-center p-3 h-100">
+        <div class="custom-card shadow text-center p-3">
             <span class="text-secondary small text-uppercase">Consumo IA</span>
             <h3 class="fw-bold mt-2 text-warning">{{ consumo_diario|floatformat:1 }}</h3>
             <small class="text-secondary">Sondas / día</small>
         </div>
     </div>
-</div>
+</div> <!-- Aquí terminaba la fila antes del Consumo IA, ahora cierra bien -->
 
 <!-- ANÁLISIS IA -->
 <div class="row mb-4">
