@@ -13,6 +13,7 @@ import google.generativeai as genai
 from django.utils import timezone
 # Import indispensable para compatibilidad Async-Django
 from asgiref.sync import sync_to_async
+from django.db import connection  # <--- IMPORTANTE: Agregado para limpiar conexiones
 
 # --- 1. PUENTE CON DJANGO ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,6 +31,7 @@ from medicine_control.models import Insumo, Pedido, Salida, Envio
 @sync_to_async
 def obtener_insumos_db():
     """Puente asíncrono para consultar la base de datos de Neon."""
+    connection.close_if_unusable_or_obsolete() # Limpieza antes de consulta async
     return list(Insumo.objects.all())
 
 # --- 3. FUNCIONES DE LÓGICA (TOOLS PARA LA IA) ---
@@ -37,6 +39,7 @@ def obtener_insumos_db():
 def consultar_estado_stock():
     """Consulta el stock detallado de todos los insumos y su autonomía."""
     try:
+        connection.close_if_unusable_or_obsolete() # Limpieza antes de consulta
         insumos = Insumo.objects.all()
         if not insumos:
             return "No hay insumos registrados en la base de datos."
@@ -55,6 +58,7 @@ def consultar_estado_stock():
 def registrar_movimiento(accion: str, cantidad: int, tipo_stock: str):
     """Registra carga o descarga de insumos (cajas o unidades)."""
     try:
+        connection.close_if_unusable_or_obsolete() # Limpieza antes de escribir
         insumo = Insumo.objects.filter(nombre__icontains="Sonda").first()
         if not insumo: return "Error: No encontré el insumo 'Sonda'."
         ahora = timezone.now()
@@ -63,11 +67,11 @@ def registrar_movimiento(accion: str, cantidad: int, tipo_stock: str):
             if tipo_stock == "cajas":
                 insumo.stock_actual_cajas += cantidad
                 Pedido.objects.create(insumo=insumo, tipo='normal', tipo_stock='stock_normal', 
-                                     cantidad=cantidad*30, fecha=ahora, lugar_compra="Astrana IA")
+                                      cantidad=cantidad*30, fecha=ahora, lugar_compra="Astrana IA")
             else:
                 insumo.backup_unidades += cantidad
                 Pedido.objects.create(insumo=insumo, tipo='propio', tipo_stock='seguridad', 
-                                     cantidad=cantidad, fecha=ahora, lugar_compra="Astrana IA")
+                                      cantidad=cantidad, fecha=ahora, lugar_compra="Astrana IA")
         
         elif accion == "descargar":
             if tipo_stock == "cajas":
@@ -85,6 +89,7 @@ def registrar_movimiento(accion: str, cantidad: int, tipo_stock: str):
 def obtener_resumen_pedidos():
     """Consulta trámites de OS y Backup pendientes."""
     try:
+        connection.close_if_unusable_or_obsolete() # Limpieza antes de consulta
         hoy = timezone.now().date()
         envio_os_mes = Envio.objects.filter(tipo='os', fecha_solicitud__month=hoy.month).last()
         txt = "📋 *Estado de Gestión Mensual:*\n\n"
@@ -118,7 +123,6 @@ async def rutina_monitoreo_astrana(application):
             
             # Chequeo Diario (10:00 y 20:00)
             if ahora.hour in [10, 20] and ultimo_chequeo_hora != ahora.hour:
-                # LLAMADA ASYNC A LA DB
                 insumos = await obtener_insumos_db()
                 alertas = []
                 for i in insumos:
@@ -168,10 +172,13 @@ historiales = {}
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # Limpiamos conexiones antes de procesar cualquier mensaje
+    await sync_to_async(connection.close_if_unusable_or_obsolete)()
+
     if user_id not in historiales:
         prompt = "Sos Astrana, asistente de Joaco. Tono profesional. Usá las herramientas para gestionar stock."
         historiales[user_id] = model.start_chat(history=[], enable_automatic_function_calling=True)
-        # Se lanza el prompt inicial de forma segura
         await asyncio.to_thread(historiales[user_id].send_message, prompt)
 
     try:

@@ -69,9 +69,10 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # --- BASE DE DATOS ---
 # Si detecta DATABASE_URL (en Render), usa Postgres. Si no, usa SQLite local.
 DATABASES = {
-    'default': dj_database_url.config(
+    'default': dj_database_url.config (
         default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
-        conn_max_age=600
+        conn_max_age=0,
+        conn_health_checks=True,
     )
 }
 

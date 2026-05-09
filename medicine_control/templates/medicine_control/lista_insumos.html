@@ -3,10 +3,12 @@
 {% block contenido %}
 
 <!-- DASHBOARD DE MÉTRICAS DESPLEGABLES -->
-<div class="row g-3 mb-4">
+<!-- Agregamos align-items-start para que las cards no se estiren entre sí -->
+<div class="row g-3 mb-4 align-items-start">
     <!-- CARD: TOTAL GLOBAL -->
     <div class="col">
-        <div class="custom-card shadow text-center p-3 h-100" onclick="toggleCard(this)" style="cursor: pointer; transition: transform 0.2s;">
+        <!-- Quitamos h-100 para que solo crezca la que se expande -->
+        <div class="custom-card shadow text-center p-3" onclick="toggleCard(this)" style="cursor: pointer; transition: transform 0.2s;">
             <span class="text-secondary small text-uppercase">Total Global</span>
             <h3 class="fw-bold mt-2 text-info">{{ total_unidades }}</h3>
             <small class="text-secondary">Unidades</small>
@@ -21,12 +23,11 @@
 
     <!-- CARD: TOTAL CAJAS -->
     <div class="col">
-        <div class="custom-card shadow text-center p-3 h-100" onclick="toggleCard(this)" style="cursor: pointer;">
+        <div class="custom-card shadow text-center p-3" onclick="toggleCard(this)" style="cursor: pointer;">
             <span class="text-secondary small text-uppercase">Total Cajas</span>
             <h3 class="fw-bold mt-2 text-white">{{ total_cajas_normal|add:"1" }}</h3>
             <small class="text-secondary">En stock</small>
 
-            <!-- Detalle oculto (Asumiendo 1 caja siempre como backup de seguridad) -->
             <div class="card-detail mt-3 pt-2 border-top border-secondary border-opacity-25" style="display: none; text-align: left;">
                 <p class="mb-1 small text-white">📦 Stock BNA: <strong>{{ total_cajas_normal }}</strong></p>
                 <p class="mb-0 small text-warning">🛡️ Reserva: <strong>1</strong></p>
@@ -36,7 +37,7 @@
 
     <!-- CARD: SONDAS SUELTAS (RESERVA) -->
     <div class="col">
-        <div class="custom-card shadow p-3 h-100" style="border: 1px solid rgba(0, 242, 255, 0.3); background: rgba(13, 110, 253, 0.08); position: relative; display: flex; flex-direction: column; justify-content: center;">
+        <div class="custom-card shadow p-3" style="border: 1px solid rgba(0, 242, 255, 0.3); background: rgba(13, 110, 253, 0.08); position: relative; display: flex; flex-direction: column; justify-content: center; min-height: 115px;">
             <div style="position: absolute; left: 15px; top: 50%; transform: translateY(-45%);">
                 <i class="bi bi-shield-shaded" style="font-size: 2.8rem; color: #00f2ff; text-shadow: 0 0 15px #00f2ff;"></i>
             </div>
@@ -52,20 +53,20 @@
 
     <!-- CARD: AUTONOMÍA -->
     <div class="col">
-        <div class="custom-card shadow text-center p-3 h-100" onclick="toggleCard(this)" style="cursor: pointer;">
+        <div class="custom-card shadow text-center p-3" onclick="toggleCard(this)" style="cursor: pointer;">
             <span class="text-secondary small text-uppercase">Autonomía</span>
             <h3 class="fw-bold mt-2 {% if autonomia < 10 %}text-danger{% elif autonomia < 20 %}text-warning{% else %}text-success{% endif %}">
                 {{ autonomia }}
             </h3>
             <small class="text-secondary">Días libres</small>
 
-            <!-- Detalle oculto -->
             <div class="card-detail mt-3 pt-2 border-top border-secondary border-opacity-25" style="display: none; text-align: left;">
                 <p class="mb-1 small text-white">⏳ Normal: <strong>{{ aut_normal }} días</strong></p>
                 <p class="mb-0 small text-success">🆘 Seguridad: <strong>{{ aut_backup }} días</strong></p>
             </div>
         </div>
     </div>
+</div>
 
     <!-- CARD: CONSUMO IA -->
     <div class="col">
@@ -251,21 +252,23 @@ function toggleCard(cardElement) {
     const detail = cardElement.querySelector('.card-detail');
     if (!detail) return;
     
-    const isHidden = detail.style.display === 'none';
+    const isCurrentlyVisible = detail.style.display === 'block';
     
-    // Cerramos los demás detalles para que se vea limpio
+    // 1. Cerramos todos los otros detalles abiertos
     document.querySelectorAll('.card-detail').forEach(d => {
         d.style.display = 'none';
-        d.parentElement.style.transform = 'scale(1)';
+        // Quitamos el efecto de escala de la card madre
+        d.closest('.custom-card').style.transform = 'scale(1)';
+        d.closest('.custom-card').style.boxShadow = '';
     });
     
-    if (isHidden) {
+    // 2. Si el que tocamos estaba cerrado, lo abrimos
+    if (!isCurrentlyVisible) {
         detail.style.display = 'block';
-        cardElement.style.transform = 'scale(1.02)';
-    } else {
-        detail.style.display = 'none';
-        cardElement.style.transform = 'scale(1)';
+        cardElement.style.transform = 'scale(1.03)';
+        cardElement.style.boxShadow = '0 10px 20px rgba(0,0,0,0.2)';
     }
+    // Si ya estaba abierto, al haber ejecutado el paso 1 ya se cerró.
 }
 </script>
 
