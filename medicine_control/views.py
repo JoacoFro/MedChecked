@@ -45,12 +45,12 @@ def home(request):
     hay_backup_pendiente = Envio.objects.filter(estado='tramite', tipo='backup').exists()
 
     context = {
-        'total_unidades': total_unidades,
-        'total_normal_un': total_normal_un,      # <--- AGREGADO
-        'total_backup_un': total_backup,        # <--- AGREGADO (es lo mismo que total_backup)
-        'total_cajas': total_cajas,
-        'total_cajas_normal': total_cajas_normal, # <--- AGREGADO
-        'total_backup': total_backup,
+        'total_unidades': total_unidades,      # Las 444 unidades totales
+        'total_normal_un': total_unidades - total_backup, # Las unidades menos la reserva
+        'total_backup_un': total_backup,       # El valor de la reserva de seguridad
+        'total_cajas': total_cajas,            # AQUÍ: Debe ser 13 (Total real en estantería)
+        'total_cajas_normal': total_cajas - 1, # AQUÍ: Debe ser 12 (Stock para uso diario)
+        'total_backup': total_backup,          # Las sondas sueltas (84 en tu captura)
         'consumo_diario': round(consumo_final, 1),
         'autonomia': autonomia,
         'porcentaje': porcentaje,
