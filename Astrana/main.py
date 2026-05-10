@@ -13,6 +13,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 from django.utils import timezone
 from asgiref.sync import sync_to_async
 from django.db import connection
+import fcntl
 
 # --- 1. CONFIGURACIÓN DE ENTORNO ---
 print("🚀 [DEBUG] El archivo main.py se está ejecutando correctamente")
@@ -110,7 +111,20 @@ async def iniciar_rutina_job(context: ContextTypes.DEFAULT_TYPE):
     await rutina_monitoreo_astrana(context.application)
 
 def main():
-    """Función principal para inicializar Astrana."""
+    """Función principal para inicializar Astrana con protección de instancia única."""
+    
+    # --- 🔒 SISTEMA DE BLOQUEO (ANTIDUPLICADOS) ---
+    # Creamos o abrimos un archivo de bloqueo en la raíz
+    lock_file = open("astrana.lock", "w")
+    try:
+        # LOCK_EX: Bloqueo exclusivo
+        # LOCK_NB: No bloqueante (si no puede obtenerlo, tira IOError inmediatamente)
+        fcntl.lockf(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except IOError:
+        print("⚠️ [BLOQUEO] Astrana ya está corriendo en otro proceso. Abortando inicio duplicado para evitar Conflict.")
+        return
+    # ----------------------------------------------
+
     token_bot = os.getenv("TELEGRAM_TOKEN")
     if not token_bot:
         print("❌ ERROR: No se encontró TELEGRAM_TOKEN.")
@@ -121,7 +135,7 @@ def main():
 
     print("🤖 Astrana preparando motores...")
 
-    # 2. Programamos la rutina en el JobQueue (se activa a los 5 seg de iniciar)
+    # 2. Programamos la rutina en el JobQueue
     if application.job_queue:
         application.job_queue.run_once(iniciar_rutina_job, when=5)
         print("🚀 Tarea de monitoreo vinculada al motor principal.")
@@ -129,9 +143,9 @@ def main():
         print("⚠️ Advertencia: JobQueue no disponible. Revisá 'apscheduler'.")
 
     # 3. Iniciamos el bot
-    print("📡 Iniciando polling de Telegram...")
+    print("📡 Iniciando polling de Telegram (Instancia Protegida)...")
     
-    # drop_pending_updates=True limpia mensajes viejos y evita el error de 'Conflict'
+    # drop_pending_updates=True es clave
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
@@ -140,4 +154,4 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         print("👋 Astrana se está apagando...")
     except Exception as e:
-        print(f"❌ Error crítico: {e}")
+        print(f"❌ Error crítico en Main: {e}")
