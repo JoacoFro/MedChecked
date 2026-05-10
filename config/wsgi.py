@@ -5,14 +5,24 @@ from django.core.wsgi import get_wsgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
-# --- EL LANZADOR DE ASTRANA ---
-# Solo lanzamos el bot si no es un proceso de "reloader" y si estamos en el proceso principal
-if os.environ.get('RUN_MAIN') != 'true': # Evita que se dispare dos veces en local
+if os.environ.get('RUN_MAIN') != 'true':
     try:
-        # Lanzamos el bot como un proceso hijo totalmente independiente
-        subprocess.Popen([sys.executable, "Astrana/main.py"])
-        print("✅ [WSGI] Astrana lanzada como proceso independiente.")
+        # Obtenemos la ruta absoluta al archivo main.py
+        current_path = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(current_path)
+        bot_path = os.path.join(project_root, "Astrana", "main.py")
+
+        print(f"DEBUG: Intentando lanzar bot en: {bot_path}")
+
+        # Lanzamos con -u para ver logs y capturamos errores
+        subprocess.Popen(
+            [sys.executable, "-u", bot_path],
+            cwd=project_root, # Ejecutamos desde la raíz del proyecto
+            stdout=None, 
+            stderr=None
+        )
+        print("✅ [WSGI] Astrana lanzada con ruta absoluta.")
     except Exception as e:
-        print(f"❌ [WSGI] No se pudo lanzar Astrana: {e}")
+        print(f"❌ [WSGI] Error crítico al lanzar: {e}")
 
 application = get_wsgi_application()
