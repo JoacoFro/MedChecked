@@ -136,7 +136,7 @@ def main():
 # Dentro de tu función main()
     print("📡 Iniciando polling de Telegram...")
 
-# drop_pending_updates=True: Ignora mensajes viejos acumulados
+
 # El parámetro interno de la librería cerrará otras sesiones abiertas
     application.run_polling(drop_pending_updates=True)
 
