@@ -131,35 +131,37 @@ async def rutina_monitoreo_astrana(application):
 
 # --- 4. INICIO DEL BOT (MODERNO Y CORREGIDO) ---
 
-# --- 4. INICIO DEL BOT (VERSIÓN DEFINITIVA CORREGIDA) ---
+# --- 4. INICIO DEL BOT (VERSIÓN SIMPLIFICADA Y COMPATIBLE) ---
 
-# --- 4. INICIO DEL BOT (VERSIÓN ROBUSTA PARA RENDER) ---
-
-# --- 4. INICIO DEL BOT (VERSIÓN SIN DEPENDENCIAS EXTRAS) ---
+async def iniciar_monitoreo(application):
+    """Lanza la rutina de monitoreo una vez que el bot arranca."""
+    await asyncio.sleep(5)  # Esperamos a que el bot conecte bien
+    asyncio.create_task(rutina_monitoreo_astrana(application))
+    print("🚀 Sistema de monitoreo Astrana iniciado en segundo plano...")
 
 def main():
-    """Función principal que lanza el bot y la rutina de fondo."""
+    """Función principal que lanza el bot."""
     token_bot = os.getenv("TELEGRAM_TOKEN")
     if not token_bot:
         print("❌ ERROR: No se encontró TELEGRAM_TOKEN.")
         return
 
     # 1. Construimos la aplicación
+    # Quitamos el post_init de acá para evitar errores de versión
     application = ApplicationBuilder().token(token_bot).build()
 
-    # 2. Lanzamos la rutina de monitoreo de forma independiente 
-    # Usamos el loop que run_polling creará internamente
     print("🤖 Astrana preparando motores...")
-    
-    # Esta función se ejecutará apenas el bot arranque
-    async def post_init(app):
-        asyncio.create_task(rutina_monitoreo_astrana(app))
-        print("🚀 Sistema de monitoreo Astrana iniciado en segundo plano...")
 
-    # 3. Iniciamos el bot
-    # drop_pending_updates=True limpia el conflicto anterior
-    # post_init lanza tu rutina de las 6 AM apenas conecta
-    application.run_polling(drop_pending_updates=True, post_init=post_init)
+    # 2. Usamos un truco simple: creamos la tarea justo antes de bloquear con el polling
+    # Obtenemos el loop actual para programar el monitoreo
+    loop = asyncio.get_event_loop()
+    loop.create_task(iniciar_monitoreo(application))
+
+    print("📡 Iniciando polling de Telegram...")
+
+    # 3. Iniciamos el bot (Forma estándar)
+    # drop_pending_updates=True es vital para evitar el error de "Conflict"
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     try:
