@@ -105,7 +105,6 @@ async def rutina_monitoreo_astrana(application):
         await asyncio.sleep(60)
 
 # --- 4. INTEGRACIÓN CON EL BOT ---
-
 async def iniciar_rutina_job(context: ContextTypes.DEFAULT_TYPE):
     """Lanzador de la rutina compatible con el JobQueue del bot."""
     await rutina_monitoreo_astrana(context.application)
@@ -129,16 +128,10 @@ def main():
     else:
         print("⚠️ Advertencia: JobQueue no disponible. Revisá 'apscheduler'.")
 
-    print("📡 Iniciando polling de Telegram...")
-
     # 3. Iniciamos el bot
-    # drop_pending_updates=True es fundamental para limpiar errores de "Conflict"
-        
-# Dentro de tu función main()
     print("📡 Iniciando polling de Telegram...")
-
-
-# El parámetro interno de la librería cerrará otras sesiones abiertas
+    
+    # drop_pending_updates=True limpia mensajes viejos y evita el error de 'Conflict'
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
