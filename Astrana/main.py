@@ -14,6 +14,7 @@ import google.generativeai as genai
 from django.utils import timezone
 from asgiref.sync import sync_to_async
 from django.db import connection
+import threading
 
 # --- 1. CONFIGURACIÓN DE ENTORNO ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -129,15 +130,13 @@ async def rutina_monitoreo_astrana(application):
 
 
 
-# --- 4. INICIO DEL BOT (MODERNO Y CORREGIDO) ---
+# --- 4. INICIO DEL BOT (ESTRUCTURA DE HILO INDEPENDIENTE) ---
 
-# --- 4. INICIO DEL BOT (VERSIÓN SIMPLIFICADA Y COMPATIBLE) ---
-
-async def iniciar_monitoreo(application):
-    """Lanza la rutina de monitoreo una vez que el bot arranca."""
-    await asyncio.sleep(5)  # Esperamos a que el bot conecte bien
-    asyncio.create_task(rutina_monitoreo_astrana(application))
-    print("🚀 Sistema de monitoreo Astrana iniciado en segundo plano...")
+def lanzar_monitoreo(application):
+    """Crea un nuevo loop de eventos para el hilo de monitoreo."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(rutina_monitoreo_astrana(application))
 
 def main():
     """Función principal que lanza el bot."""
@@ -147,20 +146,19 @@ def main():
         return
 
     # 1. Construimos la aplicación
-    # Quitamos el post_init de acá para evitar errores de versión
     application = ApplicationBuilder().token(token_bot).build()
 
     print("🤖 Astrana preparando motores...")
 
-    # 2. Usamos un truco simple: creamos la tarea justo antes de bloquear con el polling
-    # Obtenemos el loop actual para programar el monitoreo
-    loop = asyncio.get_event_loop()
-    loop.create_task(iniciar_monitoreo(application))
+    # 2. Lanzamos el monitoreo en un HILO aparte (Thread)
+    # Esto evita el error de "no current event loop" de forma definitiva
+    t = threading.Thread(target=lanzar_monitoreo, args=(application,), daemon=True)
+    t.start()
 
-    print("📡 Iniciando polling de Telegram...")
+    print("🚀 Hilo de monitoreo lanzado. Iniciando Telegram...")
 
-    # 3. Iniciamos el bot (Forma estándar)
-    # drop_pending_updates=True es vital para evitar el error de "Conflict"
+    # 3. Iniciamos el bot
+    # drop_pending_updates=True sigue siendo vital
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
