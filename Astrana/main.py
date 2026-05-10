@@ -14,6 +14,8 @@ from django.utils import timezone
 # Import indispensable para compatibilidad Async-Django
 from asgiref.sync import sync_to_async
 from django.db import connection  # <--- IMPORTANTE: Agregado para limpiar conexiones
+import os
+from dotenv import load_dotenv
 
 # --- 1. PUENTE CON DJANGO ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -109,19 +111,63 @@ def obtener_resumen_pedidos():
 
 # --- 4. RUTINA DE MONITOREO AUTOMÁTICO (CORREGIDA) ---
 
+
 async def rutina_monitoreo_astrana(application):
-    """Chequea umbrales a las 10 y 20hs, y envía resumen los viernes."""
+    """Chequea umbrales a las 10 y 20hs, envía resumen los viernes y prepara bienvenida."""
     CHAT_ID = 8034926015 
     tz = pytz.timezone('America/Argentina/Buenos_Aires')
     ultimo_chequeo_hora = None
     ultimo_resumen_dia = None
+    ultima_bienvenida_dia = None
 
     while True:
         try:
             ahora = datetime.now(tz)
             hoy_str = ahora.strftime('%Y-%m-%d')
             
-            # Chequeo Diario (10:00 y 20:00)
+            # --- 1. PREPARAR BIENVENIDA (06:00 AM) ---
+            if ahora.hour == 21 and ahora.minute == 10 and ultima_bienvenida_dia != hoy_str:
+                insumos = await obtener_insumos_db()
+                alertas_criticas = [i.nombre for i in insumos if i.autonomia_smart <= 10]
+                es_viernes = (ahora.weekday() == 4)
+                
+                # Definimos el mensaje personalizado según la situación
+                if alertas_criticas:
+                    nombres = ", ".join(alertas_criticas)
+                    texto_alexa = f"Atención Joaco, Astrana informa stock crítico en: {nombres}. Por favor, revisá Telegram."
+                
+                elif es_viernes:
+                    # Reporte detallado para los viernes
+                    detalles = []
+                    for i in insumos:
+                        detalles.append(f"{i.nombre} con {i.total_unidades_reales} unidades y {i.autonomia_smart} días de autonomía.")
+                    
+                    reporte_stock = " ".join(detalles)
+                    texto_alexa = (
+                        f"Buen día Joaco. Hoy es viernes y el reporte de Astrana es el siguiente: "
+                        f"{reporte_stock} Recordá que ya tenés disponible tu resumen semanal en el bot."
+                    )
+                
+                else:
+                    texto_alexa = "Buen día Joaco. Astrana te informa que no hay alertas pendientes y el stock se encuentra estable."
+
+                try:
+                    import requests
+                    # Usamos el endpoint 'announcement' para que el texto quede disponible
+                    url_anuncio = (
+                        f"https://voicemonkey.io/trigger/announcement?"
+                        f"access_token={VOICEMONKEY_ACCESS_TOKEN}&"
+                        f"secret_token={VOICEMONKEY_SECRET_TOKEN}&"
+                        f"monkey={MONKEY_NAME}&"
+                        f"announcement={requests.utils.quote(texto_alexa)}"
+                    )
+                    await asyncio.to_thread(requests.get, url_anuncio)
+                    print(f"📢 Mensaje de bienvenida preparado: {texto_alexa}")
+                    ultima_bienvenida_dia = hoy_str
+                except Exception as alexa_e:
+                    print(f"Error al preparar bienvenida: {alexa_e}")
+
+            # --- 2. CHEQUEO DIARIO (10:00 y 20:00) ---
             if ahora.hour in [10, 20] and ultimo_chequeo_hora != ahora.hour:
                 insumos = await obtener_insumos_db()
                 alertas = []
@@ -136,17 +182,32 @@ async def rutina_monitoreo_astrana(application):
                         alertas.append(f"🚨 Crítico: {i.nombre} con autonomía de {i.autonomia_smart} días.")
 
                 if alertas:
+                    # Enviar a Telegram
                     msg = "⚠️ *ASTRANA: ALERTAS DE SISTEMA*\n\n" + "\n".join(alertas)
                     await application.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode='Markdown')
+                    
+                    # Alerta inmediata a Alexa solo si es crítico fuera del horario de bienvenida
+                    if any("🚨 Crítico" in a for a in alertas):
+                        try:
+                            import requests
+                            url_critica = (
+                                f"https://voicemonkey.io/trigger/monkeyslot?"
+                                f"access_token={VOICEMONKEY_ACCESS_TOKEN}&"
+                                f"secret_token={VOICEMONKEY_SECRET_TOKEN}&"
+                                f"monkey={MONKEY_NAME}"
+                            )
+                            await asyncio.to_thread(requests.get, url_critica)
+                        except: pass
+
                 ultimo_chequeo_hora = ahora.hour
 
-            # Resumen Semanal (Viernes 10:00)
+            # --- 3. RESUMEN SEMANAL (Viernes 10:00) ---
             if ahora.weekday() == 4 and ahora.hour == 10 and ultimo_resumen_dia != hoy_str:
                 insumos = await obtener_insumos_db()
                 resumen = "📊 *RESUMEN SEMANAL DE INSUMOS*\n\n"
                 for i in insumos:
                     resumen += (f"🔹 *{i.nombre}*\n"
-                                f"   • Cajas (OS): {i.stock_actual_cajas}\n"
+                                f"   • Cajas (OS): {i.stock_actual_cajas + 1}\n" 
                                 f"   • Backup: {i.backup_unidades} un.\n"
                                 f"   • Autonomía: {i.autonomia_smart} días\n\n")
                 await application.bot.send_message(chat_id=CHAT_ID, text=resumen, parse_mode='Markdown')
@@ -156,48 +217,3 @@ async def rutina_monitoreo_astrana(application):
             print(f"Error en monitoreo: {e}")
         
         await asyncio.sleep(60)
-
-# --- 5. CONFIGURACIÓN DE IA Y BOT ---
-
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel(
-    model_name='models/gemini-flash-latest', 
-    tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos]
-)
-
-historiales = {}
-
-async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    
-    # Limpiamos conexiones antes de procesar cualquier mensaje
-    await sync_to_async(connection.close_if_unusable_or_obsolete)()
-
-    if user_id not in historiales:
-        prompt = "Sos Astrana, asistente de Joaco. Tono profesional. Usá las herramientas para gestionar stock."
-        historiales[user_id] = model.start_chat(history=[], enable_automatic_function_calling=True)
-        await asyncio.to_thread(historiales[user_id].send_message, prompt)
-
-    try:
-        response = await asyncio.to_thread(historiales[user_id].send_message, update.message.text)
-        await update.message.reply_text(response.text)
-    except Exception as e:
-        print(f"Error en respuesta: {e}")
-
-# --- 6. PUNTO DE ENTRADA ---
-
-async def post_init(application):
-    """Inicia la rutina de fondo sin bloquear el bot."""
-    asyncio.create_task(rutina_monitoreo_astrana(application))
-
-if __name__ == '__main__':
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    
-    application.post_init = post_init
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), responder))
-    
-    print("🚀 Astrana IA desplegando en Render...")
-    application.run_polling()
