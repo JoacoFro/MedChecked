@@ -135,29 +135,31 @@ async def rutina_monitoreo_astrana(application):
 
 # --- 4. INICIO DEL BOT (VERSIÓN ROBUSTA PARA RENDER) ---
 
+# --- 4. INICIO DEL BOT (VERSIÓN SIN DEPENDENCIAS EXTRAS) ---
+
 def main():
     """Función principal que lanza el bot y la rutina de fondo."""
     token_bot = os.getenv("TELEGRAM_TOKEN")
     if not token_bot:
-        print("❌ ERROR: No se encontró TELEGRAM_TOKEN en las variables de entorno.")
+        print("❌ ERROR: No se encontró TELEGRAM_TOKEN.")
         return
 
     # 1. Construimos la aplicación
-    # Usamos concurrent_updates para que no se bloquee si hay muchos mensajes
-    application = ApplicationBuilder().token(token_bot).concurrent_updates(True).build()
+    application = ApplicationBuilder().token(token_bot).build()
 
-    # 2. Agregamos la rutina de monitoreo al sistema de tareas del bot
-    # Esto reemplaza al asyncio.create_task y es mucho más estable
-    job_queue = application.job_queue
-    job_queue.run_once(lambda context: asyncio.create_task(rutina_monitoreo_astrana(application)), when=0)
+    # 2. Lanzamos la rutina de monitoreo de forma independiente 
+    # Usamos el loop que run_polling creará internamente
+    print("🤖 Astrana preparando motores...")
+    
+    # Esta función se ejecutará apenas el bot arranque
+    async def post_init(app):
+        asyncio.create_task(rutina_monitoreo_astrana(app))
+        print("🚀 Sistema de monitoreo Astrana iniciado en segundo plano...")
 
-    print("🤖 Astrana está operativa y monitoreando...")
-    print("🚀 Sistema de monitoreo iniciado. Esperando mensajes...")
-
-    # 3. Iniciamos el bot con run_polling
-    # drop_pending_updates=True es lo que limpia el error de "Conflict"
-    # close_loop=False evita conflictos con el cierre de la instancia en Render
-    application.run_polling(drop_pending_updates=True, close_loop=False)
+    # 3. Iniciamos el bot
+    # drop_pending_updates=True limpia el conflicto anterior
+    # post_init lanza tu rutina de las 6 AM apenas conecta
+    application.run_polling(drop_pending_updates=True, post_init=post_init)
 
 if __name__ == "__main__":
     try:
@@ -165,4 +167,4 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         print("👋 Astrana se está apagando...")
     except Exception as e:
-        print(f"❌ Error crítico en el proceso principal: {e}")
+        print(f"❌ Error crítico: {e}")
