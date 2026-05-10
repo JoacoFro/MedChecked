@@ -126,7 +126,7 @@ async def rutina_monitoreo_astrana(application):
             hoy_str = ahora.strftime('%Y-%m-%d')
             
             # --- 1. PREPARAR BIENVENIDA (06:00 AM) ---
-            if ahora.hour == 21 and ahora.minute == 10 and ultima_bienvenida_dia != hoy_str:
+            if ahora.hour == 6 and ahora.minute == 0 and ultima_bienvenida_dia != hoy_str:
                 insumos = await obtener_insumos_db()
                 alertas_criticas = [i.nombre for i in insumos if i.autonomia_smart <= 10]
                 es_viernes = (ahora.weekday() == 4)
