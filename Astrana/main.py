@@ -15,6 +15,7 @@ from asgiref.sync import sync_to_async
 from django.db import connection
 
 # --- 1. CONFIGURACIÓN DE ENTORNO ---
+print("🚀 [DEBUG] El archivo main.py se está ejecutando correctamente")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
