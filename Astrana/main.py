@@ -15,6 +15,7 @@ from asgiref.sync import sync_to_async
 from django.db import connection
 
 # --- 1. CONFIGURACIÓN DE ENTORNO ---
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -131,6 +132,12 @@ def main():
 
     # 3. Iniciamos el bot
     # drop_pending_updates=True es fundamental para limpiar errores de "Conflict"
+        
+# Dentro de tu función main()
+    print("📡 Iniciando polling de Telegram...")
+
+# drop_pending_updates=True: Ignora mensajes viejos acumulados
+# El parámetro interno de la librería cerrará otras sesiones abiertas
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
