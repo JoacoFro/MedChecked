@@ -133,38 +133,36 @@ async def rutina_monitoreo_astrana(application):
 
 # --- 4. INICIO DEL BOT (VERSIÓN DEFINITIVA CORREGIDA) ---
 
-async def main():
-    """Función principal para inicializar el bot y la rutina."""
+# --- 4. INICIO DEL BOT (VERSIÓN ROBUSTA PARA RENDER) ---
+
+def main():
+    """Función principal que lanza el bot y la rutina de fondo."""
     token_bot = os.getenv("TELEGRAM_TOKEN")
     if not token_bot:
-        print("❌ ERROR: No se encontró TELEGRAM_TOKEN.")
+        print("❌ ERROR: No se encontró TELEGRAM_TOKEN en las variables de entorno.")
         return
 
-    # Construimos la aplicación
-    application = ApplicationBuilder().token(token_bot).build()
+    # 1. Construimos la aplicación
+    # Usamos concurrent_updates para que no se bloquee si hay muchos mensajes
+    application = ApplicationBuilder().token(token_bot).concurrent_updates(True).build()
 
-    # Lanzamos la rutina de monitoreo en el fondo
-    asyncio.create_task(rutina_monitoreo_astrana(application))
-    
+    # 2. Agregamos la rutina de monitoreo al sistema de tareas del bot
+    # Esto reemplaza al asyncio.create_task y es mucho más estable
+    job_queue = application.job_queue
+    job_queue.run_once(lambda context: asyncio.create_task(rutina_monitoreo_astrana(application)), when=0)
+
     print("🤖 Astrana está operativa y monitoreando...")
-    print("🚀 Sistema de monitoreo Astrana iniciado...")
+    print("🚀 Sistema de monitoreo iniciado. Esperando mensajes...")
 
-    # Iniciamos el bot de la manera correcta (polling)
-    async with application:
-        await application.initialize()
-        await application.start()
-        # Esta línea reemplaza a start_polling y mantiene el bot escuchando
-        await application.updater.start_polling()
-        
-        # Mantiene el proceso vivo para que Render no tire 502
-        while True:
-            await asyncio.sleep(3600)
+    # 3. Iniciamos el bot con run_polling
+    # drop_pending_updates=True es lo que limpia el error de "Conflict"
+    # close_loop=False evita conflictos con el cierre de la instancia en Render
+    application.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
     try:
-        # Iniciamos el loop de asyncio
-        asyncio.run(main())
+        main()
     except (KeyboardInterrupt, SystemExit):
         print("👋 Astrana se está apagando...")
     except Exception as e:
-        print(f"❌ Error fatal al iniciar: {e}")
+        print(f"❌ Error crítico en el proceso principal: {e}")
