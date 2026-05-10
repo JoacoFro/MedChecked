@@ -131,36 +131,38 @@ async def rutina_monitoreo_astrana(application):
 
 # --- 4. INICIO DEL BOT (MODERNO Y CORREGIDO) ---
 
+# --- 4. INICIO DEL BOT (VERSIÓN DEFINITIVA CORREGIDA) ---
+
 async def main():
     """Función principal para inicializar el bot y la rutina."""
     token_bot = os.getenv("TELEGRAM_TOKEN")
     if not token_bot:
-        print("❌ ERROR: No se encontró TELEGRAM_TOKEN en las variables de entorno.")
+        print("❌ ERROR: No se encontró TELEGRAM_TOKEN.")
         return
 
-    # Inicializamos la aplicación del bot
+    # Construimos la aplicación
     application = ApplicationBuilder().token(token_bot).build()
 
-    # Lanzamos la rutina de monitoreo como una tarea de fondo
+    # Lanzamos la rutina de monitoreo en el fondo
     asyncio.create_task(rutina_monitoreo_astrana(application))
     
     print("🤖 Astrana está operativa y monitoreando...")
+    print("🚀 Sistema de monitoreo Astrana iniciado...")
 
-    # Iniciamos el bot correctamente
-    await application.initialize()
-    await application.start_polling()
-    
-    # Mantiene el loop vivo para que Render no cierre el proceso
-    try:
+    # Iniciamos el bot de la manera correcta (polling)
+    async with application:
+        await application.initialize()
+        await application.start()
+        # Esta línea reemplaza a start_polling y mantiene el bot escuchando
+        await application.updater.start_polling()
+        
+        # Mantiene el proceso vivo para que Render no tire 502
         while True:
             await asyncio.sleep(3600)
-    except asyncio.CancelledError:
-        await application.stop()
-        await application.shutdown()
 
 if __name__ == "__main__":
     try:
-        # asyncio.run gestiona el event loop automáticamente en Python 3.14
+        # Iniciamos el loop de asyncio
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         print("👋 Astrana se está apagando...")
