@@ -55,44 +55,45 @@ def consultar_estado_stock():
         return f"Error al consultar stock: {e}"
 
 def registrar_movimiento(accion: str, cantidad: int, tipo_stock: str, nombre_insumo: str = "Sonda"):
-    """
-    Registra carga o descarga. 
-    CORRECCIÓN: Ahora busca el 'nombre_insumo' que el bot detecte.
-    """
     try:
         connection.close_if_unusable_or_obsolete()
-        # Buscamos dinámicamente el insumo por nombre
-        insumo = Insumo.objects.filter(nombre__icontains=nombre_insumo).first()
         
-        if not insumo: 
-            return f"Error: No encontré el insumo '{nombre_insumo}' en la base de datos."
-            
+        # LIMPIEZA: Si Gemini manda "Sondas", le sacamos la 's' para que machee mejor
+        nombre_busqueda = nombre_insumo.rstrip('sS') 
+        
+        insumo = Insumo.objects.filter(nombre__icontains=nombre_busqueda).first()
+        
+        if not insumo:
+            # ERROR CLARO: Para que Gemini no invente el éxito
+            return f"❌ ERROR: No encontré el insumo '{nombre_insumo}' (busqué como '{nombre_busqueda}'). Verificá el nombre en el panel."
+
         ahora = timezone.now()
         
-        if accion == "cargar":
-            if tipo_stock == "cajas":
-                insumo.stock_actual_cajas += cantidad
-                Pedido.objects.create(insumo=insumo, tipo='normal', tipo_stock='stock_normal', 
-                                     cantidad=cantidad*30, fecha=ahora, lugar_compra="Astrana IA")
-            else:
-                insumo.backup_unidades += cantidad
-                Pedido.objects.create(insumo=insumo, tipo='propio', tipo_stock='seguridad', 
-                                     cantidad=cantidad, fecha=ahora, lugar_compra="Astrana IA")
-        
-        elif accion == "descargar":
-            if tipo_stock == "cajas":
+        if accion == "descargar":
+            if tipo_stock in ["principal", "cajas"]:
                 insumo.stock_actual_cajas -= cantidad
-                Salida.objects.create(insumo=insumo, cantidad_cajas=cantidad, cantidad=cantidad*30, tipo_stock='stock_normal')
+                Salida.objects.create(
+                    insumo=insumo, 
+                    cantidad_cajas=cantidad, 
+                    cantidad=cantidad*30, 
+                    tipo_stock='stock_normal'
+                )
             else:
                 insumo.backup_unidades -= cantidad
-                Salida.objects.create(insumo=insumo, cantidad_cajas=0, cantidad=cantidad, tipo_stock='seguridad')
+                Salida.objects.create(
+                    insumo=insumo, 
+                    cantidad_cajas=0, 
+                    cantidad=cantidad, 
+                    tipo_stock='seguridad'
+                )
 
         insumo.save()
-        # Forzamos actualización para confirmar el cambio
-        insumo.refresh_from_db()
-        return f"✅ {accion.capitalize()} exitosa en {insumo.nombre}. Nuevo total: {insumo.total_unidades_reales} un."
+        insumo.refresh_from_db() # Sincronizamos con la DB
+        
+        return f"✅ Descarga exitosa en {insumo.nombre}. Nuevo total: {insumo.total_unidades_reales} un."
+
     except Exception as e:
-        return f"Error técnico al registrar: {e}"
+        return f"❌ Error técnico: {str(e)}"
 
 def obtener_resumen_pedidos():
     """Consulta trámites con limpieza de conexión."""
