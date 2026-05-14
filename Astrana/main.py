@@ -1,7 +1,6 @@
 import os
 import sys
 import django
-import logging
 import asyncio
 import pytz
 from pathlib import Path
@@ -11,8 +10,9 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 import google.generativeai as genai
 from django.utils import timezone
-# Import indispensable para compatibilidad Async-Django
 from asgiref.sync import sync_to_async
+# IMPORTANTE: Necesitamos esto para limpiar conexiones muertas
+from django.db import connection
 
 # --- 1. PUENTE CON DJANGO ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,38 +25,48 @@ django.setup()
 
 from medicine_control.models import Insumo, Pedido, Salida, Envio
 
-# --- 2. WRAPPERS PARA DJANGO (SOLUCIÓN PARA RENDER) ---
+# --- 2. WRAPPERS PARA DJANGO ---
 
 @sync_to_async
 def obtener_insumos_db():
-    """Puente asíncrono para consultar la base de datos de Neon."""
+    """Puente asíncrono que limpia la conexión SSL antes de consultar."""
+    connection.close_if_unusable_or_obsolete()
     return list(Insumo.objects.all())
 
-# --- 3. FUNCIONES DE LÓGICA (TOOLS PARA LA IA) ---
+# --- 3. FUNCIONES DE LÓGICA (TOOLS CORREGIDAS) ---
 
 def consultar_estado_stock():
-    """Consulta el stock detallado de todos los insumos y su autonomía."""
+    """Consulta el stock detallado limpiando la conexión SSL."""
     try:
+        connection.close_if_unusable_or_obsolete()
         insumos = Insumo.objects.all()
         if not insumos:
-            return "No hay insumos registrados en la base de datos."
+            return "No hay insumos registrados."
         
         reporte = "📊 Estado Actual:\n"
         for i in insumos:
             aut = i.autonomia_smart
             emoji = "🔴" if aut <= 10 else "🟡" if aut <= 15 else "🟢"
-            reporte += (f"- {i.nombre}: {i.total_unidades_reales} unidades "
+            reporte += (f"- {i.nombre}: {i.total_unidades_reales} un. "
                         f"({i.stock_actual_cajas} cajas, {i.backup_unidades} backup). "
                         f"Autonomía: {emoji} {aut} días.\n")
         return reporte
     except Exception as e:
         return f"Error al consultar stock: {e}"
 
-def registrar_movimiento(accion: str, cantidad: int, tipo_stock: str):
-    """Registra carga o descarga de insumos (cajas o unidades)."""
+def registrar_movimiento(accion: str, cantidad: int, tipo_stock: str, nombre_insumo: str = "Sonda"):
+    """
+    Registra carga o descarga. 
+    CORRECCIÓN: Ahora busca el 'nombre_insumo' que el bot detecte.
+    """
     try:
-        insumo = Insumo.objects.filter(nombre__icontains="Sonda").first()
-        if not insumo: return "Error: No encontré el insumo 'Sonda'."
+        connection.close_if_unusable_or_obsolete()
+        # Buscamos dinámicamente el insumo por nombre
+        insumo = Insumo.objects.filter(nombre__icontains=nombre_insumo).first()
+        
+        if not insumo: 
+            return f"Error: No encontré el insumo '{nombre_insumo}' en la base de datos."
+            
         ahora = timezone.now()
         
         if accion == "cargar":
@@ -78,13 +88,16 @@ def registrar_movimiento(accion: str, cantidad: int, tipo_stock: str):
                 Salida.objects.create(insumo=insumo, cantidad_cajas=0, cantidad=cantidad, tipo_stock='seguridad')
 
         insumo.save()
-        return f"✅ Registro exitoso. Nuevo total: {insumo.total_unidades_reales} un. ({insumo.semaforo_estado})"
+        # Forzamos actualización para confirmar el cambio
+        insumo.refresh_from_db()
+        return f"✅ {accion.capitalize()} exitosa en {insumo.nombre}. Nuevo total: {insumo.total_unidades_reales} un."
     except Exception as e:
-        return f"Error técnico: {e}"
+        return f"Error técnico al registrar: {e}"
 
 def obtener_resumen_pedidos():
-    """Consulta trámites de OS y Backup pendientes."""
+    """Consulta trámites con limpieza de conexión."""
     try:
+        connection.close_if_unusable_or_obsolete()
         hoy = timezone.now().date()
         envio_os_mes = Envio.objects.filter(tipo='os', fecha_solicitud__month=hoy.month).last()
         txt = "📋 *Estado de Gestión Mensual:*\n\n"
@@ -102,32 +115,25 @@ def obtener_resumen_pedidos():
     except Exception as e:
         return f"Error en resumen: {e}"
 
-# --- 4. RUTINA DE MONITOREO AUTOMÁTICO (CORREGIDA) ---
+# --- 4. RUTINA DE MONITOREO ---
 
 async def rutina_monitoreo_astrana(application):
-    """Chequea umbrales a las 10 y 20hs, y envía resumen los viernes."""
     CHAT_ID = 8034926015 
-    tz = pytz.timezone('America/Argentina/Buenos_Aires')
+    tz = pytz.timezone('America/Argentina_Buenos_Aires')
     ultimo_chequeo_hora = None
     ultimo_resumen_dia = None
 
     while True:
         try:
             ahora = datetime.now(tz)
-            hoy_str = ahora.strftime('%Y-%m-%d')
-            
-            # Chequeo Diario (10:00 y 20:00)
             if ahora.hour in [10, 20] and ultimo_chequeo_hora != ahora.hour:
-                # LLAMADA ASYNC A LA DB
                 insumos = await obtener_insumos_db()
                 alertas = []
                 for i in insumos:
                     if (i.stock_actual_cajas * 30) <= 30:
-                        alertas.append(f"📦 *Stock Normal:* Solo queda {i.stock_actual_cajas} caja de {i.nombre}.")
-                    
+                        alertas.append(f"📦 *Stock Normal:* Queda {i.stock_actual_cajas} caja de {i.nombre}.")
                     if i.backup_unidades <= 56:
                         alertas.append(f"🛡️ *Seguridad:* {i.nombre} tiene solo {i.backup_unidades} un. de backup.")
-                    
                     if i.autonomia_smart <= 10:
                         alertas.append(f"🚨 *Crítico:* {i.nombre} con autonomía de {i.autonomia_smart} días.")
 
@@ -135,22 +141,8 @@ async def rutina_monitoreo_astrana(application):
                     msg = "⚠️ *ASTRANA: ALERTAS DE SISTEMA*\n\n" + "\n".join(alertas)
                     await application.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode='Markdown')
                 ultimo_chequeo_hora = ahora.hour
-
-            # Resumen Semanal (Viernes 10:00)
-            if ahora.weekday() == 4 and ahora.hour == 10 and ultimo_resumen_dia != hoy_str:
-                insumos = await obtener_insumos_db()
-                resumen = "📊 *RESUMEN SEMANAL DE INSUMOS*\n\n"
-                for i in insumos:
-                    resumen += (f"🔹 *{i.nombre}*\n"
-                                f"   • Cajas (OS): {i.stock_actual_cajas}\n"
-                                f"   • Backup: {i.backup_unidades} un.\n"
-                                f"   • Autonomía: {i.autonomia_smart} días\n\n")
-                await application.bot.send_message(chat_id=CHAT_ID, text=resumen, parse_mode='Markdown')
-                ultimo_resumen_dia = hoy_str
-
         except Exception as e:
             print(f"Error en monitoreo: {e}")
-        
         await asyncio.sleep(60)
 
 # --- 5. CONFIGURACIÓN DE IA Y BOT ---
@@ -160,7 +152,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(
-    model_name='models/gemini-flash-latest', 
+    model_name='models/gemini-1.5-flash', 
     tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos]
 )
 
@@ -169,9 +161,9 @@ historiales = {}
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in historiales:
-        prompt = "Sos Astrana, asistente de Joaco. Tono profesional. Usá las herramientas para gestionar stock."
+        prompt = "Sos Astrana, asistente de Joaco. Gestionás stock de medicina. Sé concisa. Usá herramientas siempre."
         historiales[user_id] = model.start_chat(history=[], enable_automatic_function_calling=True)
-        # Se lanza el prompt inicial de forma segura
+        # Llamada inicial silenciosa
         await asyncio.to_thread(historiales[user_id].send_message, prompt)
 
     try:
@@ -180,17 +172,12 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Error en respuesta: {e}")
 
-# --- 6. PUNTO DE ENTRADA ---
-
 async def post_init(application):
-    """Inicia la rutina de fondo sin bloquear el bot."""
     asyncio.create_task(rutina_monitoreo_astrana(application))
 
 if __name__ == '__main__':
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    
     application.post_init = post_init
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), responder))
-    
-    print("🚀 Astrana IA desplegando en Render...")
+    print("🚀 Astrana IA con corrección SSL y Stock activa...")
     application.run_polling()
