@@ -151,8 +151,9 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 genai.configure(api_key=GEMINI_API_KEY)
+# BUSCÁ ESTA LÍNEA (alrededor de la 145):
 model = genai.GenerativeModel(
-    model_name='models/gemini-1.5-flash', 
+    model_name='models/gemini-flash-latest', # <--- CAMBIÁ ESTO
     tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos]
 )
 
