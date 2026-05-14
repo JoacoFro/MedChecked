@@ -120,7 +120,7 @@ def obtener_resumen_pedidos():
 
 async def rutina_monitoreo_astrana(application):
     CHAT_ID = 8034926015 
-    tz = pytz.timezone('America/Argentina_Buenos_Aires')
+    tz = pytz.timezone('America/Buenos_Aires')
     ultimo_chequeo_hora = None
     ultimo_resumen_dia = None
 
