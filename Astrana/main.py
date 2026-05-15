@@ -146,7 +146,7 @@ async def rutina_monitoreo_astrana(application):
             print(f"Error en monitoreo: {e}")
         await asyncio.sleep(60)
 
-# --- 5. CONFIGURACIÓN DE IA Y BOT ---
+
 
 # --- 5. CONFIGURACIÓN DE IA Y BOT ---
 
@@ -155,22 +155,11 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ESTO ES LO NUEVO: Las instrucciones "grabadas" en el cerebro de Astrana
-instrucciones_sistema = (
-    "Sos Astrana, la asistente técnica de Joaco para MedChecked. "
-    "Tu única fuente de verdad es la base de datos. "
-    "NUNCA calcules el stock manualmente. Si el usuario te dice que usó algo, "
-    "DEBES llamar a la función 'registrar_movimiento'. "
-    "Si el usuario dice 'Sondas', usá el nombre 'Sonda' para la herramienta. "
-    "Confirma siempre mostrando el 'Nuevo total' que te devuelva la función."
-)
-
+# Eliminamos system_instruction de acá para que el modelo viejo no se corrompa
 model = genai.GenerativeModel(
     model_name='models/gemini-flash-latest', 
-    tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos],
-    system_instruction=instrucciones_sistema 
+    tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos]
 )
-
 
 historiales = {}
 
@@ -178,33 +167,30 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if user_id not in historiales:
-        # 1. Creamos el historial de chat
-        chat = model.start_chat(history=[], enable_automatic_function_calling=True)
+        # Estructuramos el historial nativo simulando un chat previo exitoso.
+        # Esta es la única forma 100% efectiva para que gemini-flash-latest obedezca.
+        historial_forzado = [
+            {
+                "role": "user", 
+                "parts": ["Hola. A partir de ahora sos Astrana, la asistente de Joaco para MedChecked. Tu única fuente de verdad es la base de datos. NUNCA calcules stock a mano ni inventes totales. Si te pido registrar un consumo, tenés la obligación absoluta de llamar a la función 'registrar_movimiento'. Si te hablo de 'Sondas' en plural, usá el nombre 'Sonda' para la base de datos."]
+            },
+            {
+                "role": "model", 
+                "parts": ["Entendido. Soy Astrana. No haré cálculos manuales ni inventaré números. Utilizaré estrictamente las herramientas de base de datos provistas para responder y registrar cualquier movimiento."]
+            }
+        ]
         
-        # 2. INYECTAMOS LAS INSTRUCCIONES COMO UN MENSAJE PREVIO
-        # Esto obliga al modelo a leer sus reglas antes de escucharte a vos.
-        instrucciones = (
-            "REGLAS DE ASTRANA: "
-            "1. Tu única fuente de verdad es la base de datos a través de tus herramientas. "
-            "2. Para CUALQUIER cambio de stock, USA 'registrar_movimiento'. "
-            "3. NO calcules totales manualmente. "
-            "4. Si te piden descargar 'Sondas', usa el nombre 'Sonda' en la función. "
-            "Confirma siempre con el 'Nuevo total' que devuelva la base de datos."
-        )
-        
-        # Enviamos las instrucciones de forma "silenciosa" (usando to_thread para no trabar)
-        await asyncio.to_thread(chat.send_message, instrucciones)
-        
-        historiales[user_id] = chat
+        # Iniciamos el chat con el pasado ya inyectado de forma nativa
+        historiales[user_id] = model.start_chat(history=historial_forzado, enable_automatic_function_calling=True)
 
     try:
-        # 3. Mandamos el mensaje real del usuario
+        # Enviamos el mensaje real del usuario directamente sin llamadas previas ruidosas
         response = await asyncio.to_thread(historiales[user_id].send_message, update.message.text)
         
         if response.text:
             await update.message.reply_text(response.text)
         else:
-            await update.message.reply_text("✅ Movimiento procesado en la base de datos.")
+            await update.message.reply_text("✅ Movimiento enviado y procesado en la base de datos.")
             
     except Exception as e:
         print(f"Error en respuesta: {e}")
