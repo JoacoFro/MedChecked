@@ -58,39 +58,38 @@ def registrar_movimiento(accion: str, cantidad: int, tipo_stock: str, nombre_ins
     try:
         connection.close_if_unusable_or_obsolete()
         
-        # LIMPIEZA: Si Gemini manda "Sondas", le sacamos la 's' para que machee mejor
+        # Limpieza de plurales
         nombre_busqueda = nombre_insumo.rstrip('sS') 
-        
         insumo = Insumo.objects.filter(nombre__icontains=nombre_busqueda).first()
         
         if not insumo:
-            # ERROR CLARO: Para que Gemini no invente el éxito
-            return f"❌ ERROR: No encontré el insumo '{nombre_insumo}' (busqué como '{nombre_busqueda}'). Verificá el nombre en el panel."
+            return f"❌ ERROR: No encontré el insumo '{nombre_insumo}'."
 
-        ahora = timezone.now()
-        
         if accion == "descargar":
-            if tipo_stock in ["principal", "cajas"]:
+            # Normalizamos lo que pueda mandar la IA para que entre acá
+            if tipo_stock in ["stock_normal", "cajas", "principal", "normal"]:
                 insumo.stock_actual_cajas -= cantidad
                 Salida.objects.create(
                     insumo=insumo, 
                     cantidad_cajas=cantidad, 
-                    cantidad=cantidad*30, 
-                    tipo_stock='stock_normal'
+                    cantidad=cantidad * 30, 
+                    tipo_stock='stock_normal' # Mismo valor que Django Choices
                 )
+                tipo_usado = "Stock Normal (Cajas)"
             else:
                 insumo.backup_unidades -= cantidad
                 Salida.objects.create(
                     insumo=insumo, 
                     cantidad_cajas=0, 
                     cantidad=cantidad, 
-                    tipo_stock='seguridad'
+                    tipo_stock='seguridad' # Mismo valor que Django Choices
                 )
+                tipo_usado = "Stock de Seguridad (Unidades)"
 
         insumo.save()
-        insumo.refresh_from_db() # Sincronizamos con la DB
+        insumo.refresh_from_db()
         
-        return f"✅ Descarga exitosa en {insumo.nombre}. Nuevo total: {insumo.total_unidades_reales} un."
+        return f"✅ Descarga exitosa en {insumo.nombre} ({tipo_usado}). Nuevo total: {insumo.total_unidades_reales} un."
 
     except Exception as e:
         return f"❌ Error técnico: {str(e)}"
@@ -150,12 +149,13 @@ async def rutina_monitoreo_astrana(application):
 
 # --- 5. CONFIGURACIÓN DE IA Y BOT ---
 
+# --- 5. CONFIGURACIÓN DE IA Y BOT ---
+
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Eliminamos system_instruction de acá para que el modelo viejo no se corrompa
 model = genai.GenerativeModel(
     model_name='models/gemini-flash-latest', 
     tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos]
@@ -167,34 +167,30 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     if user_id not in historiales:
-        # Estructuramos el historial nativo simulando un chat previo exitoso.
-        # Esta es la única forma 100% efectiva para que gemini-flash-latest obedezca.
+        # Le pasamos un falso pasado donde la IA ya entendió el script del HTML
         historial_forzado = [
             {
                 "role": "user", 
-                "parts": ["Hola. A partir de ahora sos Astrana, la asistente de Joaco para MedChecked. Tu única fuente de verdad es la base de datos. NUNCA calcules stock a mano ni inventes totales. Si te pido registrar un consumo, tenés la obligación absoluta de llamar a la función 'registrar_movimiento'. Si te hablo de 'Sondas' en plural, usá el nombre 'Sonda' para la base de datos."]
+                "parts": ["Hola. Sos Astrana, gestionás el stock de MedChecked mediante herramientas. Reglas estrictas:\n1. NUNCA calcules stock a mano ni inventes números.\n2. Si te pido descargar CAJAS, usá tipo_stock='stock_normal'.\n3. Si te pido descargar UNIDADES sueltas o de backup, usá tipo_stock='seguridad'.\n4. Para 'Sondas', pasale el nombre 'Sonda' a la función."]
             },
             {
                 "role": "model", 
-                "parts": ["Entendido. Soy Astrana. No haré cálculos manuales ni inventaré números. Utilizaré estrictamente las herramientas de base de datos provistas para responder y registrar cualquier movimiento."]
+                "parts": ["Entendido. Soy Astrana. Usaré las herramientas obligatoriamente. Para cajas usaré tipo_stock='stock_normal' y para unidades de seguridad usaré tipo_stock='seguridad'. No inventaré datos."]
             }
         ]
-        
-        # Iniciamos el chat con el pasado ya inyectado de forma nativa
         historiales[user_id] = model.start_chat(history=historial_forzado, enable_automatic_function_calling=True)
 
     try:
-        # Enviamos el mensaje real del usuario directamente sin llamadas previas ruidosas
         response = await asyncio.to_thread(historiales[user_id].send_message, update.message.text)
         
         if response.text:
             await update.message.reply_text(response.text)
         else:
-            await update.message.reply_text("✅ Movimiento enviado y procesado en la base de datos.")
+            await update.message.reply_text("✅ Movimiento procesado en la base de datos.")
             
     except Exception as e:
         print(f"Error en respuesta: {e}")
-        await update.message.reply_text("⚠️ No pude conectar con el sistema. ¿Probamos de nuevo?")
+        await update.message.reply_text("⚠️ Hubo un problema de conexión. ¿Probamos de nuevo?")
 
 async def post_init(application):
     asyncio.create_task(rutina_monitoreo_astrana(application))
