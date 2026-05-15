@@ -177,24 +177,38 @@ historiales = {}
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # Si el usuario no tiene historial, iniciamos el chat (ya tiene las instrucciones del model)
     if user_id not in historiales:
-        historiales[user_id] = model.start_chat(history=[], enable_automatic_function_calling=True)
+        # 1. Creamos el historial de chat
+        chat = model.start_chat(history=[], enable_automatic_function_calling=True)
+        
+        # 2. INYECTAMOS LAS INSTRUCCIONES COMO UN MENSAJE PREVIO
+        # Esto obliga al modelo a leer sus reglas antes de escucharte a vos.
+        instrucciones = (
+            "REGLAS DE ASTRANA: "
+            "1. Tu única fuente de verdad es la base de datos a través de tus herramientas. "
+            "2. Para CUALQUIER cambio de stock, USA 'registrar_movimiento'. "
+            "3. NO calcules totales manualmente. "
+            "4. Si te piden descargar 'Sondas', usa el nombre 'Sonda' en la función. "
+            "Confirma siempre con el 'Nuevo total' que devuelva la base de datos."
+        )
+        
+        # Enviamos las instrucciones de forma "silenciosa" (usando to_thread para no trabar)
+        await asyncio.to_thread(chat.send_message, instrucciones)
+        
+        historiales[user_id] = chat
 
     try:
-        # Enviamos el mensaje del usuario a Gemini
+        # 3. Mandamos el mensaje real del usuario
         response = await asyncio.to_thread(historiales[user_id].send_message, update.message.text)
         
-        # Si Gemini responde con texto, lo mandamos a Telegram
         if response.text:
             await update.message.reply_text(response.text)
         else:
-            # En caso de que ejecute una tool y no genere texto extra
-            await update.message.reply_text("Movimiento procesado correctamente en la base de datos.")
+            await update.message.reply_text("✅ Movimiento procesado en la base de datos.")
             
     except Exception as e:
         print(f"Error en respuesta: {e}")
-        await update.message.reply_text("Tuve un problema técnico. ¿Podés repetir el comando?")
+        await update.message.reply_text("⚠️ No pude conectar con el sistema. ¿Probamos de nuevo?")
 
 async def post_init(application):
     asyncio.create_task(rutina_monitoreo_astrana(application))
