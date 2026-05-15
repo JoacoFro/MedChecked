@@ -148,31 +148,52 @@ async def rutina_monitoreo_astrana(application):
 
 # --- 5. CONFIGURACIÓN DE IA Y BOT ---
 
+# --- 5. CONFIGURACIÓN DE IA Y BOT ---
+
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 genai.configure(api_key=GEMINI_API_KEY)
-# BUSCÁ ESTA LÍNEA (alrededor de la 145):
+
+# ESTO ES LO NUEVO: Las instrucciones "grabadas" en el cerebro de Astrana
+instrucciones_sistema = (
+    "Sos Astrana, la asistente técnica de Joaco para MedChecked. "
+    "Tu única fuente de verdad es la base de datos. "
+    "NUNCA calcules el stock manualmente. Si el usuario te dice que usó algo, "
+    "DEBES llamar a la función 'registrar_movimiento'. "
+    "Si el usuario dice 'Sondas', usá el nombre 'Sonda' para la herramienta. "
+    "Confirma siempre mostrando el 'Nuevo total' que te devuelva la función."
+)
+
 model = genai.GenerativeModel(
-    model_name='models/gemini-flash-latest', # <--- CAMBIÁ ESTO
-    tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos]
+    model_name='gemini-1.5-flash',
+    tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos],
+    system_instruction=instrucciones_sistema 
 )
 
 historiales = {}
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # Si el usuario no tiene historial, iniciamos el chat (ya tiene las instrucciones del model)
     if user_id not in historiales:
-        prompt = "Sos Astrana, asistente de Joaco. Gestionás stock de medicina. Sé concisa. Usá herramientas siempre."
         historiales[user_id] = model.start_chat(history=[], enable_automatic_function_calling=True)
-        # Llamada inicial silenciosa
-        await asyncio.to_thread(historiales[user_id].send_message, prompt)
 
     try:
+        # Enviamos el mensaje del usuario a Gemini
         response = await asyncio.to_thread(historiales[user_id].send_message, update.message.text)
-        await update.message.reply_text(response.text)
+        
+        # Si Gemini responde con texto, lo mandamos a Telegram
+        if response.text:
+            await update.message.reply_text(response.text)
+        else:
+            # En caso de que ejecute una tool y no genere texto extra
+            await update.message.reply_text("Movimiento procesado correctamente en la base de datos.")
+            
     except Exception as e:
         print(f"Error en respuesta: {e}")
+        await update.message.reply_text("Tuve un problema técnico. ¿Podés repetir el comando?")
 
 async def post_init(application):
     asyncio.create_task(rutina_monitoreo_astrana(application))
