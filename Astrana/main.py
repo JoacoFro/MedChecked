@@ -166,10 +166,11 @@ instrucciones_sistema = (
 )
 
 model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash',
+    model_name='models/gemini-flash-latest', 
     tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos],
     system_instruction=instrucciones_sistema 
 )
+
 
 historiales = {}
 
