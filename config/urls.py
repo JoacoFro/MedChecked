@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path
 from medicine_control import views # Importamos el módulo completo para ser más ordenados
 from django.urls import path
-from .views import cron_monitoreo_sistema
+from medicine_control.views import cron_monitoreo_sistema
 
 urlpatterns = [
     path('admin/', admin.site.urls),
