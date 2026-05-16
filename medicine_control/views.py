@@ -12,6 +12,7 @@ import requests
 from django.http import JsonResponse
 from django.utils import timezone
 from .models import Insumo, Envio
+import os
 
 def home(request):
     insumos = Insumo.objects.all()
@@ -255,72 +256,72 @@ def marcar_recibido_home(request):
     return JsonResponse({'status': 'error', 'message': 'Método no permitido'}, status=405)
 
 def cron_monitoreo_sistema(request):
-    # 1. Filtro de seguridad por token en la URL para evitar ejecuciones externas
+    # 1. Filtro de seguridad por token en la URL
     token = request.GET.get('token')
     if token != 'ClaveCronmedchecked':
         return JsonResponse({"error": "No autorizado"}, status=403)
 
-    hoy = timezone.now()
-    es_viernes = (hoy.weekday() == 4)  # 4 representa el Viernes en Python
-    alertas = []
-    
-    # 2. EVALUACIÓN DE STOCK CRÍTICO
-    insumos = Insumo.objects.all()
-    for i in insumos:
-        # Si queda 1 caja o menos (30 unidades), dispara alerta
-        if (i.stock_actual_cajas * 30) <= 30:
-            alertas.append(f"📦 *Stock Normal:* Queda {i.stock_actual_cajas} caja de {i.nombre}.")
-        # Si el backup está bajo (menor o igual a lo que consideres crítico, ej: 56 un.)
-        if i.backup_unidades <= 56:
-            alertas.append(f"🛡️ *Seguridad:* {i.nombre} tiene solo {i.backup_unidades} un. de backup.")
-        # Si la autonomía smart es menor a 10 días
-        if i.autonomia_smart <= 10:
-            alertas.append(f"🚨 *Crítico:* {i.nombre} con autonomía de {i.autonomia_smart} días.")
+    try:  # <--- Atajamos cualquier error interno
+        hoy = timezone.now()
+        es_viernes = (hoy.weekday() == 4)  # 4 representa el Viernes
+        alertas = []
+        
+        # 2. EVALUACIÓN DE STOCK CRÍTICO
+        insumos = Insumo.objects.all()
+        for i in insumos:
+            # Revisá si estos nombres de campos se llaman exactamente así en tu models.py
+            if (i.stock_actual_cajas * 30) <= 30:
+                alertas.append(f"📦 *Stock Normal:* Queda {i.stock_actual_cajas} caja de {i.nombre}.")
+            if i.backup_unidades <= 56:
+                alertas.append(f"🛡️ *Seguridad:* {i.nombre} tiene solo {i.backup_unidades} un. de backup.")
+            if i.autonomia_smart <= 10:
+                alertas.append(f"🚨 *Crítico:* {i.nombre} con autonomía de {i.autonomia_smart} días.")
 
-    # 3. CONSTRUCCIÓN DEL MENSAJE SEGÚN LAS REGLAS
-    mensaje_final = ""
-    
-    # Regla A: Si hay alertas de stock, se informan de inmediato cualquier día
-    if alertas:
-        mensaje_final = "⚠️ *ASTRANA: ALERTAS DE STOCK*\n\n" + "\n".join(alertas)
-    
-    # Regla B: Si es viernes, se anexa el informe de trámites obligatoriamente
-    if es_viernes:
-        envio_os_mes = Envio.objects.filter(tipo='os', fecha_solicitud__month=hoy.month).last()
-        txt_tramites = "\n\n📋 *Resumen de Gestión de Trámites:*\n"
+        # 3. CONSTRUCCIÓN DEL MENSAJE SEGÚN LAS REGLAS
+        mensaje_final = ""
         
-        if not envio_os_mes:
-            txt_tramites += "⚠️ *Atención:* No iniciaste el trámite de OS este mes.\n"
-        else:
-            txt_tramites += f"✅ *Trámite OS:* {envio_os_mes.get_estado_display()}\n"
+        if alertas:
+            mensaje_final = "⚠️ *ASTRANA: ALERTAS DE STOCK*\n\n" + "\n".join(alertas)
+        
+        if es_viernes:
+            envio_os_mes = Envio.objects.filter(tipo='os', fecha_solicitud__month=hoy.month).last()
+            txt_tramites = "\n\n📋 *Resumen de Gestión de Trámites:*\n"
             
-        pendientes = Envio.objects.filter(estado='tramite')
-        if pendientes.exists():
-            txt_tramites += "\n*Trámites en curso:*\n"
-            for e in pendientes:
-                txt_tramites += f"🔹 {e.tipo.upper()}: Hace {(hoy.date() - e.fecha_solicitud.date()).days} días.\n"
-        
-        mensaje_final += txt_tramites
+            if not envio_os_mes:
+                txt_tramites += "⚠️ *Atención:* No iniciaste el trámite de OS este mes.\n"
+            else:
+                txt_tramites += f"✅ *Trámite OS:* {envio_os_mes.get_estado_display()}\n"
+                
+            pendientes = Envio.objects.filter(estado='tramite')
+            if pendientes.exists():
+                txt_tramites += "\n*Trámites en curso:*\n"
+                for e in pendientes:
+                    txt_tramites += f"🔹 {e.tipo.upper()}: Hace {(hoy.date() - e.fecha_solicitud.date()).days} días.\n"
+            
+            mensaje_final += txt_tramites
 
-     # 4. DISPARO DE TELEGRAM (Solo si hay algo que informar)
-    if mensaje_final:
-        import os  # Nos aseguramos de importar la librería del sistema operativo
-        
-        # Levantamos el token de forma segura desde las variables de entorno de Render/.env
-        BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')  
-        CHAT_ID = "8034926015"
-        
-        if not BOT_TOKEN:
-            return JsonResponse({"error": "Configuración incompleta: Falta TELEGRAM_TOKEN"}, status=500)
+        # 4. DISPARO DE TELEGRAM (Solo si hay algo que informar)
+        if mensaje_final:
+            BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')  
+            CHAT_ID = "8034926015"
             
-        url_tg = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        
-        try:
+            if not BOT_TOKEN:
+                return JsonResponse({"error": "Configuración incompleta: Falta TELEGRAM_TOKEN"}, status=500)
+                
+            url_tg = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+            
             requests.post(url_tg, json={
                 "chat_id": CHAT_ID,
                 "text": mensaje_final,
                 "parse_mode": "Markdown"
             }, timeout=10)
             return JsonResponse({"status": "Mensaje enviado a Telegram con éxito."})
-        except Exception as e:
-            return JsonResponse({"error": f"Error al conectar con Telegram: {str(e)}"}, status=500)
+
+        return JsonResponse({"status": "Sin novedades en el frente. No se requería reporte."})
+
+    except Exception as e:
+        # Si algo se rompe, en vez de tirar 500 te muestra el error real en pantalla
+        return JsonResponse({
+            "error": "Error interno en la ejecución del código",
+            "detalle_tecnico": str(e)
+        }, status=500)
