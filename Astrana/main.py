@@ -10,6 +10,7 @@ import google.generativeai as genai
 from asgiref.sync import sync_to_async
 # IMPORTANTE: Necesitamos esto para limpiar conexiones muertas
 from django.db import connection
+from django.utils import timezone
 
 # --- 1. PUENTE CON DJANGO ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -157,12 +158,12 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Error en respuesta: {e}")
         await update.message.reply_text("⚠️ Hubo un problema de conexión. ¿Probamos de nuevo?")
 
-async def post_init(application):
-    asyncio.create_task(rutina_monitoreo_astrana(application))
 
 if __name__ == '__main__':
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    application.post_init = post_init
+    
+    # Registramos solo el manejador de mensajes para responderte
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), responder))
-    print("🚀 Astrana IA con corrección SSL y Stock activa...")
+    
+    print("🚀 Astrana IA activa (Modo Reactivo Puro sin bucles)...")
     application.run_polling()
