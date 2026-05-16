@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 import google.generativeai as genai
+from asgiref.sync import sync_to_async
 # IMPORTANTE: Necesitamos esto para limpiar conexiones muertas
 from django.db import connection
 
