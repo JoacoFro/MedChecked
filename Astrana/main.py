@@ -2,15 +2,11 @@ import os
 import sys
 import django
 import asyncio
-import pytz
 from pathlib import Path
 from dotenv import load_dotenv
-from datetime import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 import google.generativeai as genai
-from django.utils import timezone
-from asgiref.sync import sync_to_async
 # IMPORTANTE: Necesitamos esto para limpiar conexiones muertas
 from django.db import connection
 
@@ -115,41 +111,9 @@ def obtener_resumen_pedidos():
     except Exception as e:
         return f"Error en resumen: {e}"
 
-# --- 4. RUTINA DE MONITOREO ---
-
-async def rutina_monitoreo_astrana(application):
-    CHAT_ID = 8034926015 
-    tz = pytz.timezone('America/Buenos_Aires')
-    ultimo_chequeo_hora = None
-    ultimo_resumen_dia = None
-
-    while True:
-        try:
-            ahora = datetime.now(tz)
-            if ahora.hour in [10, 20] and ultimo_chequeo_hora != ahora.hour:
-                insumos = await obtener_insumos_db()
-                alertas = []
-                for i in insumos:
-                    if (i.stock_actual_cajas * 30) <= 30:
-                        alertas.append(f"📦 *Stock Normal:* Queda {i.stock_actual_cajas} caja de {i.nombre}.")
-                    if i.backup_unidades <= 56:
-                        alertas.append(f"🛡️ *Seguridad:* {i.nombre} tiene solo {i.backup_unidades} un. de backup.")
-                    if i.autonomia_smart <= 10:
-                        alertas.append(f"🚨 *Crítico:* {i.nombre} con autonomía de {i.autonomia_smart} días.")
-
-                if alertas:
-                    msg = "⚠️ *ASTRANA: ALERTAS DE SISTEMA*\n\n" + "\n".join(alertas)
-                    await application.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode='Markdown')
-                ultimo_chequeo_hora = ahora.hour
-        except Exception as e:
-            print(f"Error en monitoreo: {e}")
-        await asyncio.sleep(60)
+# --- 4. CONFIGURACIÓN DE IA Y BOT ---
 
 
-
-# --- 5. CONFIGURACIÓN DE IA Y BOT ---
-
-# --- 5. CONFIGURACIÓN DE IA Y BOT ---
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
