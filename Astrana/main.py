@@ -207,8 +207,9 @@ def cerrar_tramite_pedido(tipo_tramite: str, tipo_stock: str = "cajas"):
         tramite.estado = 'recibido'
         tramite.fecha_cierre = ahora.date()
         tramite.save()
-        
-        resultado_msg = f"📋 ¡Trámite de {nombre_legible} cerrado con éxito! Estado: 'Recibido'."
+
+        dias_demora = (tramite.fecha_cierre - tramite.fecha_solicitud).days
+        resultado_msg = f"📋 ¡Trámite de {nombre_legible} cerrado con éxito! Estado: 'Recibido'. Joaco el tramite {dias_demora}"
 
         if cantidad and cantidad > 0:
             insumo = Insumo.objects.filter(nombre__icontains=insumo_defecto).first()
