@@ -25,9 +25,9 @@ def home(request):
     
     # --- CORRECCIÓN DE CAJAS PARA QUE COINCIDA CON LA LISTA ---
     # Sumamos las cajas que vienen de la base de datos (Stock BNA: 12)
-    cajas_bna = sum(i.stock_actual_cajas for i in insumos)
+    cajas = sum(i.stock_actual_cajas for i in insumos)
     # Definimos el total visual sumando la caja de reserva fija (Total: 13)
-    total_cajas_visual = cajas_bna + 1 
+    total_cajas_visual = cajas + 1 
     # ---------------------------------------------------------
 
     # Lógica de consumo IA
@@ -62,7 +62,7 @@ def home(request):
         'total_backup_un': total_backup_uds,             # Detalle: Seguridad
         
         'total_cajas': total_cajas_visual,               # El "13" grande del Inicio
-        'total_cajas_normal': cajas_bna,                 # El "12" que dice "Stock BNA"
+        'total_cajas_normal': cajas,                 # El "12" que dice "Stock BNA"
         
         'total_backup': total_backup_uds,                # El "84" de las Sondas sueltas
         'consumo_diario': round(consumo_final, 1),

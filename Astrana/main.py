@@ -351,7 +351,7 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         res = await sync_to_async(obtener_resumen_pedidos)()
         await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
     elif opcion == "op_tramites_iniciar_os":
-        res = await sync_to_async(iniciar_tramite_pedido)(tipo_tramite="os", cantidad=12)
+        res = await sync_to_async(iniciar_tramite_pedido)(tipo_tramite="os", cantidad=10)
         await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
     elif opcion == "op_tramites_iniciar_backup":
         res = await sync_to_async(iniciar_tramite_pedido)(tipo_tramite="backup", cantidad=150)
