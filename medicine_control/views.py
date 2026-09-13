@@ -337,26 +337,36 @@ def pastillero_view(request):
         
         try:
             insumo = Insumo.objects.get(id=insumo_id)
-            # Guardas directamente en la tabla Pastillero
+            
+            # 1. Guardar el registro de la toma
             Pastillero.objects.create(
                 insumo=insumo, 
                 cantidad=cantidad
             )
-            messages.success(request, f"Se registró el consumo de {cantidad} un. de {insumo.nombre}.")
+
+            # 2. Descontar las unidades consumidas de la reserva/backup
+            if insumo.backup_unidades >= cantidad:
+                insumo.backup_unidades -= cantidad
+            else:
+                insumo.backup_unidades = max(0, insumo.backup_unidades - cantidad)
+            insumo.save()
+
+            messages.success(request, f"Se registró la toma de {cantidad} un. de {insumo.nombre}.")
         except Exception as e:
             messages.error(request, f"Error al registrar la toma: {str(e)}")
             
         return redirect('pastillero')
 
-    # Consultas para renderizar la página
+    # Consultas para renderizar la vista
     insumos = Insumo.objects.all()
     envios = Envio.objects.all()
-    # Mapeas las instancias de Pastillero a la variable 'tomas' que espera el HTML
-    tomas = Pastillero.objects.select_related('insumo').all()[:10]
+    tomas = Pastillero.objects.select_related('insumo').all().order_by('-id')[:10]
 
     context = {
         'insumos': insumos,
         'envios': envios,
-        'tomas': tomas,  # <--- Aquí la plantilla recibe tu modelo Pastillero
+        'tomas': tomas,
     }
-    return render(request, 'pastillero.html', context)
+    
+    # Se corrige la ruta del render para apuntar a la subcarpeta del modulo
+    return render(request, 'medicine_control/pastillero.html', context)
