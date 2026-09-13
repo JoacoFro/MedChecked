@@ -12,13 +12,13 @@ tailwind.config = {
     extend: {
       colors: {
         'health-blue': '#2563EB',
-        'health-blue-light': '#EFF6FF',
+        'health-blue-light': '#1e3a8a',
         'health-green': '#10B981',
-        'health-green-light': '#D1FAE5',
+        'health-green-light': '#064e3b',
         'health-yellow': '#F59E0B',
-        'health-yellow-light': '#FEF3C7',
+        'health-yellow-light': '#78350f',
         'health-red': '#EF4444',
-        'health-red-light': '#FEE2E2',
+        'health-red-light': '#7f1d1d',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
@@ -42,37 +42,37 @@ tailwind.config = {
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 * { -webkit-tap-highlight-color: transparent; }
-body { font-family: 'Inter', sans-serif; }
-.gradient-bg { background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%); }
-.card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); }
-.card-shadow-hover:hover { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); transform: translateY(-2px); }
-.timeline-line { background: linear-gradient(180deg, #E5E7EB 0%, #E5E7EB 100%); }
+body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
+.gradient-bg { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); }
+.card-shadow { box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5); }
+.card-shadow-hover:hover { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7); transform: translateY(-2px); }
+.timeline-line { background: #334155; }
 .timeline-dot::before {
-  content: ''; position: absolute; width: 12px; height: 12px; background: white;
+  content: ''; position: absolute; width: 12px; height: 12px; background: #0f172a;
   border-radius: 50%; left: -5px; top: 50%; transform: translateY(-50%); border: 3px solid currentColor;
 }
 </style>
 </head>
-<body class="bg-gray-50 min-h-screen pb-24">
+<body class="bg-[#0f172a] text-slate-100 min-h-screen pb-24">
 
   <!-- Header -->
-  <header class="gradient-bg text-white sticky top-0 z-50 shadow-lg">
+  <header class="bg-slate-900/80 backdrop-blur-md text-white sticky top-0 z-50 border-b border-slate-800 shadow-lg">
     <div class="max-w-4xl mx-auto px-4 py-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3 animate-fade-in">
-          <div class="bg-white/20 p-2.5 rounded-xl backdrop-blur-sm">
+          <div class="bg-blue-600/20 text-blue-400 border border-blue-500/30 p-2.5 rounded-xl backdrop-blur-sm">
             <i class="fa-solid fa-pills text-xl"></i>
           </div>
           <div>
-            <h1 class="text-xl font-bold tracking-tight">MedChecked</h1>
-            <p class="text-xs text-blue-100">Control Inteligente de Medicamentos</p>
+            <h1 class="text-xl font-bold tracking-tight text-white">MedChecked</h1>
+            <p class="text-xs text-slate-400">Control Inteligente de Medicamentos</p>
           </div>
         </div>
         <button id="profileBtn" class="relative group">
-          <div class="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm border-2 border-white/30 flex items-center justify-center overflow-hidden transition-all duration-300 group-hover:scale-105">
-            <i class="fa-solid fa-user text-white"></i>
+          <div class="w-10 h-10 rounded-full bg-slate-800 border-2 border-slate-700 flex items-center justify-center overflow-hidden transition-all duration-300 group-hover:scale-105">
+            <i class="fa-solid fa-user text-slate-300"></i>
           </div>
-          <span class="absolute -top-1 -right-1 w-3 h-3 bg-health-green rounded-full border-2 border-health-blue"></span>
+          <span class="absolute -top-1 -right-1 w-3 h-3 bg-health-green rounded-full border-2 border-[#0f172a]"></span>
         </button>
       </div>
     </div>
@@ -85,9 +85,9 @@ body { font-family: 'Inter', sans-serif; }
     <div class="space-y-2">
       {% for message in messages %}
       <div class="p-4 rounded-xl text-sm font-medium border flex items-center gap-3 animate-fade-in
-        {% if message.tags == 'success' %}bg-green-50 text-green-700 border-green-200
-        {% elif message.tags == 'error' %}bg-red-50 text-red-700 border-red-200
-        {% else %}bg-blue-50 text-blue-700 border-blue-200{% endif %}">
+        {% if message.tags == 'success' %}bg-emerald-950/60 text-emerald-300 border-emerald-800/50
+        {% elif message.tags == 'error' %}bg-rose-950/60 text-rose-300 border-rose-800/50
+        {% else %}bg-blue-950/60 text-blue-300 border-blue-800/50{% endif %}">
         <span>{{ message }}</span>
       </div>
       {% endfor %}
@@ -95,26 +95,26 @@ body { font-family: 'Inter', sans-serif; }
     {% endif %}
 
     <!-- Resumen -->
-    <section class="bg-gradient-to-br from-health-blue-light to-white rounded-2xl p-5 card-shadow animate-slide-up">
+    <section class="bg-slate-800/80 border border-slate-700/50 rounded-2xl p-5 card-shadow animate-slide-up">
       <div class="flex items-center justify-between mb-4">
         <div>
-          <p class="text-sm text-gray-600 font-medium">Hoy, <span id="currentDate"></span></p>
-          <h2 class="text-2xl font-bold text-gray-800 mt-1">Estado de Insumos</h2>
+          <p class="text-sm text-slate-400 font-medium">Hoy, <span id="currentDate"></span></p>
+          <h2 class="text-2xl font-bold text-white mt-1">Estado de Insumos</h2>
         </div>
       </div>
 
       <div class="grid grid-cols-3 gap-3 text-center">
-        <div class="bg-white/60 rounded-xl p-3 backdrop-blur-sm">
-          <p class="text-2xl font-bold text-health-blue">{{ insumos.count|default:"0" }}</p>
-          <p class="text-xs text-gray-600 mt-1">Insumos Registrados</p>
+        <div class="bg-slate-900/60 border border-slate-700/40 rounded-xl p-3 backdrop-blur-sm">
+          <p class="text-2xl font-bold text-blue-400">{{ insumos.count|default:"0" }}</p>
+          <p class="text-xs text-slate-400 mt-1">Insumos Registrados</p>
         </div>
-        <div class="bg-white/60 rounded-xl p-3 backdrop-blur-sm">
-          <p class="text-2xl font-bold text-health-yellow">{{ envios.count|default:"0" }}</p>
-          <p class="text-xs text-gray-600 mt-1">Trámites en Curso</p>
+        <div class="bg-slate-900/60 border border-slate-700/40 rounded-xl p-3 backdrop-blur-sm">
+          <p class="text-2xl font-bold text-amber-400">{{ envios.count|default:"0" }}</p>
+          <p class="text-xs text-slate-400 mt-1">Trámites en Curso</p>
         </div>
-        <div class="bg-white/60 rounded-xl p-3 backdrop-blur-sm">
-          <p class="text-2xl font-bold text-health-green">{{ tomas.count|default:"0" }}</p>
-          <p class="text-xs text-gray-600 mt-1">Tomas Registradas</p>
+        <div class="bg-slate-900/60 border border-slate-700/40 rounded-xl p-3 backdrop-blur-sm">
+          <p class="text-2xl font-bold text-emerald-400">{{ tomas.count|default:"0" }}</p>
+          <p class="text-xs text-slate-400 mt-1">Tomas Registradas</p>
         </div>
       </div>
     </section>
@@ -122,68 +122,68 @@ body { font-family: 'Inter', sans-serif; }
     <!-- Lista de Insumos y Registro de Toma -->
     <section class="space-y-3">
       <div class="flex items-center justify-between px-1">
-        <h3 class="text-lg font-bold text-gray-800">Insumos y Medicación Diario</h3>
+        <h3 class="text-lg font-bold text-slate-200">Insumos y Medicación Diario</h3>
       </div>
 
       <div class="space-y-3">
         {% for insumo in insumos %}
-        <div class="bg-white rounded-2xl p-4 card-shadow card-shadow-hover transition-all duration-300 animate-scale-in border-l-4 
-                    {% if insumo.cajas_reales <= 1 %}border-health-red
-                    {% elif insumo.cajas_reales <= 3 %}border-health-yellow
-                    {% else %}border-health-green{% endif %}">
+        <div class="bg-slate-800/90 border border-slate-700/60 rounded-2xl p-4 card-shadow card-shadow-hover transition-all duration-300 animate-scale-in border-l-4 
+                    {% if insumo.cajas_reales <= 1 %}border-l-rose-500
+                    {% elif insumo.cajas_reales <= 3 %}border-l-amber-500
+                    {% else %}border-l-emerald-500{% endif %}">
           <div class="flex items-start gap-4">
-            <div class="{% if insumo.cajas_reales <= 1 %}bg-health-red-light text-health-red
-                        {% elif insumo.cajas_reales <= 3 %}bg-health-yellow-light text-health-yellow
-                        {% else %}bg-health-green-light text-health-green{% endif %} p-3 rounded-xl">
+            <div class="{% if insumo.cajas_reales <= 1 %}bg-rose-950/60 text-rose-400 border border-rose-800/40
+                        {% elif insumo.cajas_reales <= 3 %}bg-amber-950/60 text-amber-400 border border-amber-800/40
+                        {% else %}bg-emerald-950/60 text-emerald-400 border border-emerald-800/40{% endif %} p-3 rounded-xl">
               <i class="fa-solid fa-capsules text-xl"></i>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
-                  <h4 class="font-semibold text-gray-800 truncate">{{ insumo.nombre }}</h4>
-                  <p class="text-sm text-gray-600 mt-0.5">
-                    Stock en cajas: <strong>{{ insumo.cajas_reales }} Cajas</strong> ({{ insumo.unidades_por_caja }} u/caja)
+                  <h4 class="font-semibold text-white truncate text-base">{{ insumo.nombre }}</h4>
+                  <p class="text-sm text-slate-400 mt-0.5">
+                    Stock en cajas: <strong class="text-slate-200">{{ insumo.cajas_reales }} Cajas</strong> ({{ insumo.unidades_por_caja }} u/caja)
                   </p>
                 </div>
                 
                 {% if insumo.cajas_reales <= 1 %}
-                <span class="px-2.5 py-1 bg-health-red-light text-health-red text-xs font-semibold rounded-full whitespace-nowrap animate-pulse-soft">
+                <span class="px-2.5 py-1 bg-rose-950/80 text-rose-300 border border-rose-800 text-xs font-semibold rounded-full whitespace-nowrap animate-pulse-soft">
                   Reponer Urgente
                 </span>
                 {% elif insumo.cajas_reales <= 3 %}
-                <span class="px-2.5 py-1 bg-health-yellow-light text-health-yellow text-xs font-semibold rounded-full whitespace-nowrap">
+                <span class="px-2.5 py-1 bg-amber-950/80 text-amber-300 border border-amber-800 text-xs font-semibold rounded-full whitespace-nowrap">
                   Stock Medio
                 </span>
                 {% else %}
-                <span class="px-2.5 py-1 bg-health-green-light text-health-green text-xs font-semibold rounded-full whitespace-nowrap">
+                <span class="px-2.5 py-1 bg-emerald-950/80 text-emerald-300 border border-emerald-800 text-xs font-semibold rounded-full whitespace-nowrap">
                   Stock Normal
                 </span>
                 {% endif %}
               </div>
 
               <div class="flex items-center gap-4 mt-3 text-sm">
-                <span class="flex items-center gap-1.5 text-gray-600">
-                  <i class="fa-solid fa-boxes-stacked text-health-blue"></i>
+                <span class="flex items-center gap-1.5 text-slate-300">
+                  <i class="fa-solid fa-boxes-stacked text-blue-400"></i>
                   Total: {{ insumo.total_unidades_reales }} u.
                 </span>
-                <span class="flex items-center gap-1.5 text-gray-600">
-                  <i class="fa-solid fa-hand-holding-medical"></i>
+                <span class="flex items-center gap-1.5 text-slate-300">
+                  <i class="fa-solid fa-hand-holding-medical text-indigo-400"></i>
                   Reserva: {{ insumo.backup_unidades }} u.
                 </span>
               </div>
 
-              <!-- Formulario de envío POST hacia la vista de Django -->
+              <!-- Formulario de envío POST -->
               <form method="POST" action="{% url 'pastillero' %}" class="mt-4 flex items-center gap-2">
                 {% csrf_token %}
                 <input type="hidden" name="insumo" value="{{ insumo.id }}">
                 
-                <div class="flex items-center border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
-                  <span class="text-xs text-gray-500 px-3">Cant:</span>
+                <div class="flex items-center border border-slate-700 rounded-xl overflow-hidden bg-slate-900/80">
+                  <span class="text-xs text-slate-400 px-3">Cant:</span>
                   <input type="number" name="cantidad" min="1" max="{{ insumo.backup_unidades|default:'1' }}" value="1" 
-                         class="w-16 py-2 px-1 text-center bg-transparent border-0 font-bold text-gray-700 focus:outline-none">
+                         class="w-16 py-2 px-1 text-center bg-transparent border-0 font-bold text-white focus:outline-none">
                 </div>
 
-                <button type="submit" class="flex-1 bg-health-blue hover:bg-blue-700 text-white py-2.5 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2">
+                <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20">
                   <i class="fa-solid fa-check"></i>
                   Registrar Toma
                 </button>
@@ -193,8 +193,8 @@ body { font-family: 'Inter', sans-serif; }
           </div>
         </div>
         {% empty %}
-        <div class="bg-white rounded-2xl p-6 text-center card-shadow">
-          <p class="text-sm text-gray-500">No hay insumos registrados en este momento.</p>
+        <div class="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-6 text-center card-shadow">
+          <p class="text-sm text-slate-400">No hay insumos registrados en este momento.</p>
         </div>
         {% endfor %}
       </div>
@@ -202,26 +202,26 @@ body { font-family: 'Inter', sans-serif; }
 
     <!-- Historial de Tomas Recientes -->
     {% if tomas %}
-    <section class="bg-white rounded-2xl p-5 card-shadow animate-slide-up">
+    <section class="bg-slate-800/80 border border-slate-700/50 rounded-2xl p-5 card-shadow animate-slide-up">
       <div class="flex items-center justify-between mb-5">
-        <h3 class="text-lg font-bold text-gray-800">Historial de Tomas Recientes</h3>
-        <i class="fa-solid fa-clock-rotate-left text-health-blue text-lg"></i>
+        <h3 class="text-lg font-bold text-white">Historial de Tomas Recientes</h3>
+        <i class="fa-solid fa-clock-rotate-left text-blue-400 text-lg"></i>
       </div>
       
       <div class="space-y-0">
         {% for toma in tomas %}
         <div class="relative pl-8 pb-6">
           {% if not forloop.last %}<div class="absolute left-0 top-0 bottom-0 w-0.5 timeline-line"></div>{% endif %}
-          <div class="timeline-dot relative text-health-blue">
+          <div class="timeline-dot relative text-blue-400">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <h4 class="font-semibold text-gray-800">{{ toma.insumo.nombre }}</h4>
-                <p class="text-xs text-gray-500 mt-0.5">
-                  Cantidad: <span class="font-semibold text-gray-700">{{ toma.cantidad }} un.</span>
+                <h4 class="font-semibold text-slate-200">{{ toma.insumo.nombre }}</h4>
+                <p class="text-xs text-slate-400 mt-0.5">
+                  Cantidad: <span class="font-semibold text-slate-200">{{ toma.cantidad }} un.</span>
                 </p>
-                <p class="text-xs text-gray-400 mt-0.5">{{ toma.fecha_hora|date:"d/m/Y - H:i" }} hs</p>
+                <p class="text-xs text-slate-500 mt-0.5">{{ toma.fecha_hora|date:"d/m/Y - H:i" }} hs</p>
               </div>
-              <span class="px-2 py-1 bg-green-50 text-health-green text-xs font-semibold rounded-lg">
+              <span class="px-2 py-1 bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs font-semibold rounded-lg">
                 Registrado
               </span>
             </div>
@@ -234,24 +234,24 @@ body { font-family: 'Inter', sans-serif; }
 
     <!-- Trámites y Envíos -->
     {% if envios %}
-    <section class="bg-white rounded-2xl p-5 card-shadow animate-slide-up">
+    <section class="bg-slate-800/80 border border-slate-700/50 rounded-2xl p-5 card-shadow animate-slide-up">
       <div class="flex items-center justify-between mb-5">
-        <h3 class="text-lg font-bold text-gray-800">Trámites y Envíos en curso</h3>
-        <i class="fa-solid fa-truck text-health-blue text-lg"></i>
+        <h3 class="text-lg font-bold text-white">Trámites y Envíos en curso</h3>
+        <i class="fa-solid fa-truck text-blue-400 text-lg"></i>
       </div>
       
       <div class="space-y-0">
         {% for envio in envios %}
         <div class="relative pl-8 pb-6">
           {% if not forloop.last %}<div class="absolute left-0 top-0 bottom-0 w-0.5 timeline-line"></div>{% endif %}
-          <div class="timeline-dot relative text-health-blue">
+          <div class="timeline-dot relative text-blue-400">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <p class="text-xs text-health-blue font-semibold">CANTIDAD: {{ envio.cantidad }} u.</p>
-                <h4 class="font-semibold text-gray-800 mt-1">Trámite / Envío</h4>
-                <p class="text-sm text-gray-600">Estado: {% if envio.recibido %}Completado{% else %}En camino{% endif %}</p>
+                <p class="text-xs text-blue-400 font-semibold">CANTIDAD: {{ envio.cantidad }} u.</p>
+                <h4 class="font-semibold text-slate-200 mt-1">Trámite / Envío</h4>
+                <p class="text-sm text-slate-400">Estado: {% if envio.recibido %}Completado{% else %}En camino{% endif %}</p>
               </div>
-              <i class="fa-solid fa-box text-health-blue"></i>
+              <i class="fa-solid fa-box text-blue-400"></i>
             </div>
           </div>
         </div>
@@ -263,17 +263,17 @@ body { font-family: 'Inter', sans-serif; }
   </main>
 
   <!-- Navigation Bar Inferior -->
-  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
+  <nav class="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 z-50">
     <div class="max-w-4xl mx-auto px-4">
       <div class="flex items-center justify-around py-3">
-        <a href="{% url 'pastillero' %}" class="nav-btn flex flex-col items-center gap-1 text-health-blue">
-          <div class="p-2 bg-health-blue-light rounded-xl">
+        <a href="{% url 'pastillero' %}" class="nav-btn flex flex-col items-center gap-1 text-blue-400">
+          <div class="p-2 bg-blue-600/20 border border-blue-500/30 rounded-xl">
             <i class="fa-solid fa-pills text-lg"></i>
           </div>
           <span class="text-xs font-semibold">Pastillero</span>
         </a>
 
-        <a href="/cargar/" class="nav-btn flex flex-col items-center gap-1 text-gray-400 hover:text-health-blue transition-colors">
+        <a href="/cargar/" class="nav-btn flex flex-col items-center gap-1 text-slate-400 hover:text-blue-400 transition-colors">
           <div class="p-2 rounded-xl">
             <i class="fa-solid fa-box-archive text-lg"></i>
           </div>
