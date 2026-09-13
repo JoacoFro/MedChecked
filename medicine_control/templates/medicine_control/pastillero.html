@@ -127,13 +127,14 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
 
       <div class="space-y-3">
         {% for insumo in insumos %}
+        {% with insumo.tomas_pastillero.first.cantidad_total|default:0 as total_pastillas %}
         <div class="bg-slate-800/90 border border-slate-700/60 rounded-2xl p-4 card-shadow card-shadow-hover transition-all duration-300 animate-scale-in border-l-4 
-                    {% if insumo.cajas_reales <= 1 %}border-l-rose-500
-                    {% elif insumo.cajas_reales <= 3 %}border-l-amber-500
+                    {% if total_pastillas <= 5 %}border-l-rose-500
+                    {% elif total_pastillas <= 15 %}border-l-amber-500
                     {% else %}border-l-emerald-500{% endif %}">
           <div class="flex items-start gap-4">
-            <div class="{% if insumo.cajas_reales <= 1 %}bg-rose-950/60 text-rose-400 border border-rose-800/40
-                        {% elif insumo.cajas_reales <= 3 %}bg-amber-950/60 text-amber-400 border border-amber-800/40
+            <div class="{% if total_pastillas <= 5 %}bg-rose-950/60 text-rose-400 border border-rose-800/40
+                        {% elif total_pastillas <= 15 %}bg-amber-950/60 text-amber-400 border border-amber-800/40
                         {% else %}bg-emerald-950/60 text-emerald-400 border border-emerald-800/40{% endif %} p-3 rounded-xl">
               <i class="fa-solid fa-capsules text-xl"></i>
             </div>
@@ -142,15 +143,15 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
                 <div class="min-w-0">
                   <h4 class="font-semibold text-white truncate text-base">{{ insumo.nombre }}</h4>
                   <p class="text-sm text-slate-400 mt-0.5">
-                    Stock en cajas: <strong class="text-slate-200">{{ insumo.cajas_reales }} Cajas</strong> ({{ insumo.unidades_por_caja }} u/caja)
+                    Stock disponible: <strong class="text-emerald-400 font-bold text-sm">{{ total_pastillas }} pastillas</strong>
                   </p>
                 </div>
                 
-                {% if insumo.cajas_reales <= 1 %}
+                {% if total_pastillas <= 5 %}
                 <span class="px-2.5 py-1 bg-rose-950/80 text-rose-300 border border-rose-800 text-xs font-semibold rounded-full whitespace-nowrap animate-pulse-soft">
                   Reponer Urgente
                 </span>
-                {% elif insumo.cajas_reales <= 3 %}
+                {% elif total_pastillas <= 15 %}
                 <span class="px-2.5 py-1 bg-amber-950/80 text-amber-300 border border-amber-800 text-xs font-semibold rounded-full whitespace-nowrap">
                   Stock Medio
                 </span>
@@ -161,17 +162,6 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
                 {% endif %}
               </div>
 
-              <div class="flex items-center gap-4 mt-3 text-sm">
-                <span class="flex items-center gap-1.5 text-slate-300">
-                  <i class="fa-solid fa-boxes-stacked text-blue-400"></i>
-                  Total: {{ insumo.total_unidades_reales }} u.
-                </span>
-                <span class="flex items-center gap-1.5 text-slate-300">
-                  <i class="fa-solid fa-hand-holding-medical text-indigo-400"></i>
-                  Reserva: {{ insumo.backup_unidades }} u.
-                </span>
-              </div>
-
               <!-- Formulario de envío POST (Registrar Toma) -->
               <form method="POST" action="{% url 'pastillero' %}" class="mt-4 flex items-center gap-2">
                 {% csrf_token %}
@@ -180,7 +170,7 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
                 
                 <div class="flex items-center border border-slate-700 rounded-xl overflow-hidden bg-slate-900/80">
                   <span class="text-xs text-slate-400 px-3">Cant:</span>
-                  <input type="number" name="cantidad" min="1" max="{{ insumo.backup_unidades|default:'1' }}" value="1" 
+                  <input type="number" name="cantidad" min="1" max="{{ total_pastillas|default:'1' }}" value="1" 
                          class="w-16 py-2 px-1 text-center bg-transparent border-0 font-bold text-white focus:outline-none">
                 </div>
 
@@ -193,6 +183,7 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
             </div>
           </div>
         </div>
+        {% endwith %}
         {% empty %}
         <div class="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-6 text-center card-shadow">
           <p class="text-sm text-slate-400">No hay insumos registrados en este momento.</p>
@@ -291,8 +282,8 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-slate-300 mb-1">Cantidad de cajas a agregar</label>
-          <input type="number" name="cantidad" value="1" min="1" required 
+          <label class="block text-sm font-medium text-slate-300 mb-1">Cantidad de pastillas / comprimidos</label>
+          <input type="number" name="cantidad" value="30" min="1" required 
                  class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500">
         </div>
 

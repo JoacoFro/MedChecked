@@ -334,53 +334,56 @@ def pastillero_view(request):
     if request.method == "POST":
         accion = request.POST.get("accion")
 
-        # OPCIÓN A: Registrar un nuevo medicamento desde la ventana flotante (+)
+        # 1. CARGAR O AGREGAR MEDICAMENTO CON SU CANTIDAD DE PASTILLAS
         if accion == "crear_insumo":
             nombre = request.POST.get("nombre")
-            cantidad = int(request.POST.get("cantidad", 0))
+            cantidad_pastillas = int(request.POST.get("cantidad", 0))
 
             if nombre:
-                # Se crea el nuevo medicamento como un Insumo
-                Insumo.objects.create(
-                    nombre=nombre,
-                    stock_actual_cajas=cantidad,
-                    unidades_por_caja=30,  # Valor predeterminado
-                    consumo_diario=1,
-                    backup_unidades=0
+                # Se crea el insumo base (sin complicarnos con cajas)
+                insumo = Insumo.objects.create(nombre=nombre)
+                
+                # Se registra la entrada inicial de pastillas
+                Pastillero.objects.create(
+                    insumo=insumo,
+                    cantidad=0, # 0 porque es la carga inicial, no una toma
+                    cantidad_total=cantidad_pastillas,
+                    fecha_hora=timezone.now()
                 )
-                messages.success(request, f"Medicamento '{nombre}' agregado correctamente.")
+                messages.success(request, f"Se agregaron {cantidad_pastillas} pastillas de '{nombre}'.")
             else:
                 messages.error(request, "El nombre del medicamento no puede estar vacío.")
 
-        # OPCIÓN B: Registrar la toma diaria en la tabla Pastillero
+        # 2. REGISTRAR TOMA Y DESCONTAR DEL TOTAL DE PASTILLAS
         elif accion == "tomar":
             insumo_id = request.POST.get("insumo")
-            cantidad = int(request.POST.get("cantidad", 1))
+            cantidad_tomada = int(request.POST.get("cantidad", 1))
 
             try:
                 insumo = Insumo.objects.get(id=insumo_id)
+                
+                # Buscamos la última toma para saber cuántas pastillas quedaban
+                ultima_registro = Pastillero.objects.filter(insumo=insumo).order_by('-fecha_hora').first()
+                total_actual = ultima_registro.cantidad_total if ultima_registro else 0
+                
+                # Calculamos el nuevo total descontando la toma
+                nuevo_total = max(0, total_actual - cantidad_tomada)
 
-                # Registrar la toma en la tabla independiente Pastillero
+                # Creamos el nuevo registro con el total actualizado
                 Pastillero.objects.create(
                     insumo=insumo,
-                    cantidad=cantidad,
+                    cantidad=cantidad_tomada,
+                    cantidad_total=nuevo_total,
                     fecha_hora=timezone.now()
                 )
 
-                # Descontar del stock disponible
-                if insumo.backup_unidades >= cantidad:
-                    insumo.backup_unidades -= cantidad
-                else:
-                    insumo.backup_unidades = max(0, insumo.backup_unidades - cantidad)
-                insumo.save()
-
-                messages.success(request, f"Toma de {cantidad} u. de {insumo.nombre} registrada.")
+                messages.success(request, f"Toma de {cantidad_tomada} u. de {insumo.nombre} registrada. Quedan {nuevo_total} pastillas.")
             except Insumo.DoesNotExist:
                 messages.error(request, "El medicamento no existe.")
 
         return redirect('pastillero')
 
-    # GET: Traer los medicamentos (excluyendo sondas si aplica)
+    # GET: Cargar tomas e insumos
     insumos = Insumo.objects.exclude(nombre__icontains='Sonda')
     tomas = Pastillero.objects.select_related('insumo').all().order_by('-fecha_hora')[:20]
     envios = Envio.objects.all()

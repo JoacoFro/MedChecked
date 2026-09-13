@@ -119,8 +119,11 @@ class Envio(models.Model):
 class Pastillero(models.Model):
     insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE, related_name='tomas_pastillero')
     fecha_hora = models.DateTimeField(default=timezone.now)
-    cantidad = models.IntegerField(default=1, help_text="Cantidad de comprimidos/unidades tomadas")
+    cantidad = models.IntegerField(default=1, help_text="Cantidad de comprimidos tomados en esta toma")
     
+    # Campo simple para llevar el total de comprimidos disponibles
+    cantidad_total = models.IntegerField(default=0, help_text="Total de pastillas disponibles actualmente")
+
     class Meta:
         ordering = ['-fecha_hora']
         verbose_name = "Registro de Pastillero"
