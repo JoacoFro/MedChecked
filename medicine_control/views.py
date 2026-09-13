@@ -338,14 +338,15 @@ def pastillero_view(request):
     if request.method == "POST":
         accion = request.POST.get("accion")
 
-        # 1. CARGAR O AGREGAR MEDICAMENTO CON SU CANTIDAD DE PASTILLAS
         if accion == "crear_insumo":
             nombre = request.POST.get("nombre")
             cantidad_pastillas = int(request.POST.get("cantidad", 0))
 
             if nombre:
-                insumo = Insumo.objects.create(nombre=nombre)
-                
+                insumo = Insumo.objects.create(
+                    nombre=nombre,
+                    backup_unidades=cantidad_pastillas
+                )
                 Pastillero.objects.create(
                     insumo=insumo,
                     cantidad=0,
@@ -355,17 +356,18 @@ def pastillero_view(request):
             else:
                 messages.error(request, "El nombre del medicamento no puede estar vacío.")
 
-        # 2. REGISTRAR TOMA Y DESCONTAR DEL TOTAL DE PASTILLAS
         elif accion == "tomar":
             insumo_id = request.POST.get("insumo")
             cantidad_tomada = int(request.POST.get("cantidad", 1))
 
             try:
                 insumo = Insumo.objects.get(id=insumo_id)
-                
-                # Buscamos la última toma ordenada por ID (para evitar fallos si fecha_hora no está indexado/creado)
                 ultima_registro = Pastillero.objects.filter(insumo=insumo).order_by('-id').first()
-                total_actual = ultima_registro.cantidad_total if (ultima_registro and hasattr(ultima_registro, 'cantidad_total')) else 0
+                
+                if ultima_registro and hasattr(ultima_registro, 'cantidad_total'):
+                    total_actual = ultima_registro.cantidad_total
+                else:
+                    total_actual = getattr(insumo, 'backup_unidades', 0)
                 
                 nuevo_total = max(0, total_actual - cantidad_tomada)
 
@@ -375,6 +377,10 @@ def pastillero_view(request):
                     cantidad_total=nuevo_total
                 )
 
+                if hasattr(insumo, 'backup_unidades'):
+                    insumo.backup_unidades = nuevo_total
+                    insumo.save()
+
                 messages.success(request, f"Toma de {cantidad_tomada} u. de {insumo.nombre} registrada. Quedan {nuevo_total} pastillas.")
             except Insumo.DoesNotExist:
                 messages.error(request, "El medicamento no existe.")
@@ -383,12 +389,11 @@ def pastillero_view(request):
 
         return redirect('pastillero')
 
-    # GET: Cargar tomas e insumos de forma segura
     insumos = Insumo.objects.exclude(nombre__icontains='Sonda')
     
     try:
         tomas = Pastillero.objects.select_related('insumo').all().order_by('-id')[:20]
-    except Exception:
+    except (DatabaseError, Exception):
         tomas = Pastillero.objects.none()
 
     envios = Envio.objects.all()

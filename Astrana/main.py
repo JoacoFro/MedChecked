@@ -40,12 +40,12 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"Astrana Bot Activo y Saludable")
 
-def run_dummy_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    server.serve_forever()
+#-- def run_dummy_server():
+ #--   port = int(os.environ.get("PORT", 10000))
+  #--  server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+ #--   server.serve_forever(
 
-threading.Thread(target=run_dummy_server, daemon=True).start()
+#-- threading.Thread(target=run_dummy_server, daemon=True).start() 
 
 # --- 3. FUNCIONES DE LÓGICA / HERRAMIENTAS DJANGO ---
 
