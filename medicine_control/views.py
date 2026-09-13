@@ -10,11 +10,11 @@ from .telegram_utils import enviar_alerta
 import json
 import requests
 from django.http import JsonResponse
-from django.utils import timezone
 from .models import Insumo, Envio, Pastillero
 from django.contrib import messages
 from django.shortcuts import render, redirect
 import os
+
 
 def home(request):
     insumos = Insumo.objects.all()
@@ -330,49 +330,62 @@ def cron_monitoreo_sistema(request):
     
     # medicine_control/views.py
 
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.utils import timezone
-from .models import Insumo, Pastillero, Envio
-
 def pastillero_view(request):
     if request.method == "POST":
-        insumo_id = request.POST.get("insumo")
-        cantidad = int(request.POST.get("cantidad", 1))
+        accion = request.POST.get("accion")
 
-        try:
-            insumo = Insumo.objects.get(id=insumo_id)
+        # OPCIÓN A: Registrar un nuevo medicamento desde la ventana flotante (+)
+        if accion == "crear_insumo":
+            nombre = request.POST.get("nombre")
+            cantidad = int(request.POST.get("cantidad", 0))
 
-            # 1. Registrar EXCLUSIVAMENTE en la tabla independiente Pastillero
-            Pastillero.objects.create(
-                insumo=insumo,
-                cantidad=cantidad,
-                fecha_hora=timezone.now()
-            )
-
-            # 2. Descontar las unidades consumidas del stock disponible
-            if insumo.backup_unidades >= cantidad:
-                insumo.backup_unidades -= cantidad
+            if nombre:
+                # Se crea el nuevo medicamento como un Insumo
+                Insumo.objects.create(
+                    nombre=nombre,
+                    stock_actual_cajas=cantidad,
+                    unidades_por_caja=30,  # Valor predeterminado
+                    consumo_diario=1,
+                    backup_unidades=0
+                )
+                messages.success(request, f"Medicamento '{nombre}' agregado correctamente.")
             else:
-                insumo.backup_unidades = max(0, insumo.backup_unidades - cantidad)
-            insumo.save()
+                messages.error(request, "El nombre del medicamento no puede estar vacío.")
 
-            messages.success(request, f"Toma de {cantidad} u. de {insumo.nombre} registrada en el Pastillero.")
-        except Insumo.DoesNotExist:
-            messages.error(request, "El medicamento seleccionado no existe.")
-        except Exception as e:
-            messages.error(request, f"Error al registrar la toma: {str(e)}")
+        # OPCIÓN B: Registrar la toma diaria en la tabla Pastillero
+        elif accion == "tomar":
+            insumo_id = request.POST.get("insumo")
+            cantidad = int(request.POST.get("cantidad", 1))
+
+            try:
+                insumo = Insumo.objects.get(id=insumo_id)
+
+                # Registrar la toma en la tabla independiente Pastillero
+                Pastillero.objects.create(
+                    insumo=insumo,
+                    cantidad=cantidad,
+                    fecha_hora=timezone.now()
+                )
+
+                # Descontar del stock disponible
+                if insumo.backup_unidades >= cantidad:
+                    insumo.backup_unidades -= cantidad
+                else:
+                    insumo.backup_unidades = max(0, insumo.backup_unidades - cantidad)
+                insumo.save()
+
+                messages.success(request, f"Toma de {cantidad} u. de {insumo.nombre} registrada.")
+            except Insumo.DoesNotExist:
+                messages.error(request, "El medicamento no existe.")
 
         return redirect('pastillero')
 
-    # GET: Excluir las sondas para que no aparezcan en la pantalla del pastillero
+    # GET: Traer los medicamentos (excluyendo sondas si aplica)
     insumos = Insumo.objects.exclude(nombre__icontains='Sonda')
-
-    # Cargar las últimas tomas de la tabla Pastillero y los envíos
-    tomas = Pastillero.objects.select_related('insumo').all().order_by('-fecha_hora')[:50]
+    tomas = Pastillero.objects.select_related('insumo').all().order_by('-fecha_hora')[:20]
     envios = Envio.objects.all()
 
-    return render(request, 'medicine_control/pastillero.html', {
+    return render(request, 'pastillero.html', {
         'insumos': insumos,
         'tomas': tomas,
         'envios': envios,

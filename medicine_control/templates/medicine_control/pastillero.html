@@ -172,9 +172,10 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
                 </span>
               </div>
 
-              <!-- Formulario de envío POST -->
+              <!-- Formulario de envío POST (Registrar Toma) -->
               <form method="POST" action="{% url 'pastillero' %}" class="mt-4 flex items-center gap-2">
                 {% csrf_token %}
+                <input type="hidden" name="accion" value="tomar">
                 <input type="hidden" name="insumo" value="{{ insumo.id }}">
                 
                 <div class="flex items-center border border-slate-700 rounded-xl overflow-hidden bg-slate-900/80">
@@ -262,6 +263,52 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
 
   </main>
 
+  <!-- Botón Flotante + (FAB) -->
+  <button onclick="openAddModal()" 
+          class="fixed bottom-20 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-2xl hover:bg-blue-500 hover:scale-110 transition-all duration-300 flex items-center justify-center z-40">
+    <i class="fa-solid fa-plus text-xl"></i>
+  </button>
+
+  <!-- Modal Flotante para Agregar Medicamento -->
+  <div id="addModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-[70] hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 text-white rounded-3xl w-full max-w-md p-6 shadow-2xl animate-scale-in">
+      
+      <div class="flex items-center justify-between mb-6">
+        <h3 class="text-xl font-bold">Agregar Medicamento</h3>
+        <button type="button" onclick="closeAddModal()" class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center hover:bg-slate-700 transition-colors">
+          <i class="fa-solid fa-xmark text-slate-400"></i>
+        </button>
+      </div>
+
+      <form method="POST" action="{% url 'pastillero' %}" class="space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="accion" value="crear_insumo">
+
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1">Nombre del medicamento</label>
+          <input type="text" name="nombre" required placeholder="Ej: Paracetamol 500mg" 
+                 class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1">Cantidad de cajas a agregar</label>
+          <input type="number" name="cantidad" value="1" min="1" required 
+                 class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500">
+        </div>
+
+        <div class="flex gap-3 pt-4">
+          <button type="button" onclick="closeAddModal()" class="w-1/2 bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 rounded-xl font-semibold transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" class="w-1/2 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-semibold transition-colors shadow-lg shadow-blue-600/20">
+            Guardar
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
   <!-- Navigation Bar Inferior -->
   <nav class="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 z-50">
     <div class="max-w-4xl mx-auto px-4">
@@ -284,9 +331,29 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
   </nav>
 
 <script>
+  // Script Fecha
   const options = { weekday: 'long', day: 'numeric', month: 'long' };
   const today = new Date().toLocaleDateString('es-ES', options);
   document.getElementById('currentDate').textContent = today.charAt(0).toUpperCase() + today.slice(1);
+
+  // Script Modal Flotante
+  function openAddModal() {
+    const modal = document.getElementById('addModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  }
+
+  function closeAddModal() {
+    const modal = document.getElementById('addModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+
+  document.getElementById('addModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+      closeAddModal();
+    }
+  });
 </script>
 </body>
 </html>
