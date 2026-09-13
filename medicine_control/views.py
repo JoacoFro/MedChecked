@@ -329,6 +329,10 @@ def cron_monitoreo_sistema(request):
         }, status=500)
     
     # medicine_control/views.py
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.db import DatabaseError
+from .models import Insumo, Envio, Pastillero
 
 def pastillero_view(request):
     if request.method == "POST":
