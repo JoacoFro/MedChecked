@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Insumo, Pedido, Salida, HistorialMovimiento, Envio
+from .models import Insumo, Pedido, Salida, HistorialMovimiento, Envio, Pastillero
 
 # Registro simple para modelos básicos
 admin.site.register(Pedido)
@@ -22,3 +22,10 @@ class EnvioAdmin(admin.ModelAdmin):
     # Permite buscar por las notas
     search_fields = ('notas',)
     list_display = ('fecha_solicitud', 'estado', 'tipo', 'fecha_cierre')
+
+@admin.register(Pastillero)
+class PastilleroAdmin(admin.ModelAdmin):
+    list_display = ('fecha_hora', 'insumo', 'cantidad')
+    list_filter = ('fecha_hora', 'insumo')
+    search_fields = ('insumo__nombre',)
+    ordering = ('-fecha_hora',)

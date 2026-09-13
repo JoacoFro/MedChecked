@@ -330,43 +330,50 @@ def cron_monitoreo_sistema(request):
     
     # medicine_control/views.py
 
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.utils import timezone
+from .models import Insumo, Pastillero, Envio
+
 def pastillero_view(request):
     if request.method == "POST":
         insumo_id = request.POST.get("insumo")
         cantidad = int(request.POST.get("cantidad", 1))
-        
+
         try:
             insumo = Insumo.objects.get(id=insumo_id)
-            
-            # 1. Guardar el registro de la toma
+
+            # 1. Registrar EXCLUSIVAMENTE en la tabla independiente Pastillero
             Pastillero.objects.create(
-                insumo=insumo, 
-                cantidad=cantidad
+                insumo=insumo,
+                cantidad=cantidad,
+                fecha_hora=timezone.now()
             )
 
-            # 2. Descontar las unidades consumidas de la reserva/backup
+            # 2. Descontar las unidades consumidas del stock disponible
             if insumo.backup_unidades >= cantidad:
                 insumo.backup_unidades -= cantidad
             else:
                 insumo.backup_unidades = max(0, insumo.backup_unidades - cantidad)
             insumo.save()
 
-            messages.success(request, f"Se registró la toma de {cantidad} un. de {insumo.nombre}.")
+            messages.success(request, f"Toma de {cantidad} u. de {insumo.nombre} registrada en el Pastillero.")
+        except Insumo.DoesNotExist:
+            messages.error(request, "El medicamento seleccionado no existe.")
         except Exception as e:
             messages.error(request, f"Error al registrar la toma: {str(e)}")
-            
+
         return redirect('pastillero')
 
-    # Consultas para renderizar la vista
-    insumos = Insumo.objects.all()
-    envios = Envio.objects.all()
-    tomas = Pastillero.objects.select_related('insumo').all().order_by('-id')[:10]
+    # GET: Excluir las sondas para que no aparezcan en la pantalla del pastillero
+    insumos = Insumo.objects.exclude(nombre__icontains='Sonda')
 
-    context = {
+    # Cargar las últimas tomas de la tabla Pastillero y los envíos
+    tomas = Pastillero.objects.select_related('insumo').all().order_by('-fecha_hora')[:50]
+    envios = Envio.objects.all()
+
+    return render(request, 'medicine_control/pastillero.html', {
         'insumos': insumos,
-        'envios': envios,
         'tomas': tomas,
-    }
-    
-    # Se corrige la ruta del render para apuntar a la subcarpeta del modulo
-    return render(request, 'medicine_control/pastillero.html', context)
+        'envios': envios,
+    })
