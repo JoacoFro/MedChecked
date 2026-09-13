@@ -31,7 +31,7 @@ tailwind.config = {
       },
       keyframes: {
         fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
-        slideUp: { '0%': { transform: 'translateY(20px)', opacity: '0' }, '100%': { transform: 'translateY(0)', opacity: '1' } },
+        slideUp: { '0%': { transform: 'translateY(20px)', opacity: '0' }, '100%': { opacity: '1' } },
         pulseSoft: { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.7' } },
         scaleIn: { '0%': { transform: 'scale(0.9)', opacity: '0' }, '100%': { transform: 'scale(1)', opacity: '1' } }
       }
@@ -43,7 +43,6 @@ tailwind.config = {
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 * { -webkit-tap-highlight-color: transparent; }
 body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
-.gradient-bg { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); }
 .card-shadow { box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5); }
 .card-shadow-hover:hover { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7); transform: translateY(-2px); }
 .timeline-line { background: #334155; }
@@ -127,14 +126,13 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
 
       <div class="space-y-3">
         {% for insumo in insumos %}
-        {% with insumo.tomas_pastillero.first.cantidad_total|default:0 as total_pastillas %}
         <div class="bg-slate-800/90 border border-slate-700/60 rounded-2xl p-4 card-shadow card-shadow-hover transition-all duration-300 animate-scale-in border-l-4 
-                    {% if total_pastillas <= 5 %}border-l-rose-500
-                    {% elif total_pastillas <= 15 %}border-l-amber-500
+                    {% if insumo.backup_unidades <= 5 %}border-l-rose-500
+                    {% elif insumo.backup_unidades <= 15 %}border-l-amber-500
                     {% else %}border-l-emerald-500{% endif %}">
           <div class="flex items-start gap-4">
-            <div class="{% if total_pastillas <= 5 %}bg-rose-950/60 text-rose-400 border border-rose-800/40
-                        {% elif total_pastillas <= 15 %}bg-amber-950/60 text-amber-400 border border-amber-800/40
+            <div class="{% if insumo.backup_unidades <= 5 %}bg-rose-950/60 text-rose-400 border border-rose-800/40
+                        {% elif insumo.backup_unidades <= 15 %}bg-amber-950/60 text-amber-400 border border-amber-800/40
                         {% else %}bg-emerald-950/60 text-emerald-400 border border-emerald-800/40{% endif %} p-3 rounded-xl">
               <i class="fa-solid fa-capsules text-xl"></i>
             </div>
@@ -143,15 +141,15 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
                 <div class="min-w-0">
                   <h4 class="font-semibold text-white truncate text-base">{{ insumo.nombre }}</h4>
                   <p class="text-sm text-slate-400 mt-0.5">
-                    Stock disponible: <strong class="text-emerald-400 font-bold text-sm">{{ total_pastillas }} pastillas</strong>
+                    Stock disponible: <strong class="text-emerald-400 font-bold text-sm">{{ insumo.backup_unidades|default:0 }} pastillas</strong>
                   </p>
                 </div>
                 
-                {% if total_pastillas <= 5 %}
+                {% if insumo.backup_unidades <= 5 %}
                 <span class="px-2.5 py-1 bg-rose-950/80 text-rose-300 border border-rose-800 text-xs font-semibold rounded-full whitespace-nowrap animate-pulse-soft">
                   Reponer Urgente
                 </span>
-                {% elif total_pastillas <= 15 %}
+                {% elif insumo.backup_unidades <= 15 %}
                 <span class="px-2.5 py-1 bg-amber-950/80 text-amber-300 border border-amber-800 text-xs font-semibold rounded-full whitespace-nowrap">
                   Stock Medio
                 </span>
@@ -170,7 +168,7 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
                 
                 <div class="flex items-center border border-slate-700 rounded-xl overflow-hidden bg-slate-900/80">
                   <span class="text-xs text-slate-400 px-3">Cant:</span>
-                  <input type="number" name="cantidad" min="1" max="{{ total_pastillas|default:'1' }}" value="1" 
+                  <input type="number" name="cantidad" min="1" max="{{ insumo.backup_unidades|default:'1' }}" value="1" 
                          class="w-16 py-2 px-1 text-center bg-transparent border-0 font-bold text-white focus:outline-none">
                 </div>
 
@@ -183,7 +181,6 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
             </div>
           </div>
         </div>
-        {% endwith %}
         {% empty %}
         <div class="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-6 text-center card-shadow">
           <p class="text-sm text-slate-400">No hay insumos registrados en este momento.</p>
@@ -311,7 +308,7 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
           <span class="text-xs font-semibold">Pastillero</span>
         </a>
 
-        <a href="{% url 'home' %}" class="nav-btn flex flex-col items-center gap-1 text-slate-400 hover:text-blue-400 transition-colors">
+        <a href="/" class="nav-btn flex flex-col items-center gap-1 text-slate-400 hover:text-blue-400 transition-colors">
           <div class="p-2 rounded-xl">
             <i class="fa-solid fa-house"></i>
           </div>
@@ -322,12 +319,10 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
   </nav>
 
 <script>
-  // Script Fecha
   const options = { weekday: 'long', day: 'numeric', month: 'long' };
   const today = new Date().toLocaleDateString('es-ES', options);
   document.getElementById('currentDate').textContent = today.charAt(0).toUpperCase() + today.slice(1);
 
-  // Script Modal Flotante
   function openAddModal() {
     const modal = document.getElementById('addModal');
     modal.classList.remove('hidden');
