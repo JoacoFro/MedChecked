@@ -340,15 +340,12 @@ def pastillero_view(request):
             cantidad_pastillas = int(request.POST.get("cantidad", 0))
 
             if nombre:
-                # Se crea el insumo base (sin complicarnos con cajas)
                 insumo = Insumo.objects.create(nombre=nombre)
                 
-                # Se registra la entrada inicial de pastillas
                 Pastillero.objects.create(
                     insumo=insumo,
-                    cantidad=0, # 0 porque es la carga inicial, no una toma
-                    cantidad_total=cantidad_pastillas,
-                    fecha_hora=timezone.now()
+                    cantidad=0,
+                    cantidad_total=cantidad_pastillas
                 )
                 messages.success(request, f"Se agregaron {cantidad_pastillas} pastillas de '{nombre}'.")
             else:
@@ -362,30 +359,34 @@ def pastillero_view(request):
             try:
                 insumo = Insumo.objects.get(id=insumo_id)
                 
-                # Buscamos la última toma para saber cuántas pastillas quedaban
-                ultima_registro = Pastillero.objects.filter(insumo=insumo).order_by('-fecha_hora').first()
-                total_actual = ultima_registro.cantidad_total if ultima_registro else 0
+                # Buscamos la última toma ordenada por ID (para evitar fallos si fecha_hora no está indexado/creado)
+                ultima_registro = Pastillero.objects.filter(insumo=insumo).order_by('-id').first()
+                total_actual = ultima_registro.cantidad_total if (ultima_registro and hasattr(ultima_registro, 'cantidad_total')) else 0
                 
-                # Calculamos el nuevo total descontando la toma
                 nuevo_total = max(0, total_actual - cantidad_tomada)
 
-                # Creamos el nuevo registro con el total actualizado
                 Pastillero.objects.create(
                     insumo=insumo,
                     cantidad=cantidad_tomada,
-                    cantidad_total=nuevo_total,
-                    fecha_hora=timezone.now()
+                    cantidad_total=nuevo_total
                 )
 
                 messages.success(request, f"Toma de {cantidad_tomada} u. de {insumo.nombre} registrada. Quedan {nuevo_total} pastillas.")
             except Insumo.DoesNotExist:
                 messages.error(request, "El medicamento no existe.")
+            except Exception as e:
+                messages.error(request, f"Error al procesar la toma: {str(e)}")
 
         return redirect('pastillero')
 
-    # GET: Cargar tomas e insumos
+    # GET: Cargar tomas e insumos de forma segura
     insumos = Insumo.objects.exclude(nombre__icontains='Sonda')
-    tomas = Pastillero.objects.select_related('insumo').all().order_by('-fecha_hora')[:20]
+    
+    try:
+        tomas = Pastillero.objects.select_related('insumo').all().order_by('-id')[:20]
+    except Exception:
+        tomas = Pastillero.objects.none()
+
     envios = Envio.objects.all()
 
     return render(request, 'pastillero.html', {
