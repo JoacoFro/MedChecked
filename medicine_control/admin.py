@@ -25,7 +25,7 @@ class EnvioAdmin(admin.ModelAdmin):
 
 @admin.register(Pastillero)
 class PastilleroAdmin(admin.ModelAdmin):
-    list_display = ('fecha_hora', 'insumo', 'cantidad')
-    list_filter = ('fecha_hora', 'insumo')
-    search_fields = ('insumo__nombre',)
+    list_display = ('fecha_hora', 'nombre', 'cantidad', 'cantidad_total')
+    list_filter = ('fecha_hora',)
+    search_fields = ('nombre',)
     ordering = ('-fecha_hora',)

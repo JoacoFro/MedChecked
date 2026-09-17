@@ -117,7 +117,7 @@ class Envio(models.Model):
     # medicine_control/models.py
 
 class Pastillero(models.Model):
-    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE, related_name='tomas_pastillero')
+    nombre = models.CharField(max_length=100)
     fecha_hora = models.DateTimeField(default=timezone.now)
     cantidad = models.IntegerField(default=1, help_text="Cantidad de comprimidos tomados en esta toma")
     
@@ -130,4 +130,4 @@ class Pastillero(models.Model):
         verbose_name_plural = "Pastillero"
 
     def __str__(self):
-        return f"{self.insumo.nombre} - {self.cantidad} un. ({self.fecha_hora.strftime('%d/%m/%Y %H:%M')})"
+        return f"{self.nombre} - {self.cantidad} un. ({self.fecha_hora.strftime('%d/%m/%Y %H:%M')})"

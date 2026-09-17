@@ -104,7 +104,7 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
 
       <div class="grid grid-cols-3 gap-3 text-center">
         <div class="bg-slate-900/60 border border-slate-700/40 rounded-xl p-3 backdrop-blur-sm">
-          <p class="text-2xl font-bold text-blue-400">{{ insumos.count|default:"0" }}</p>
+          <p class="text-2xl font-bold text-blue-400">{{ medicamentos.count|default:"0" }}</p>
           <p class="text-xs text-slate-400 mt-1">Insumos Registrados</p>
         </div>
         <div class="bg-slate-900/60 border border-slate-700/40 rounded-xl p-3 backdrop-blur-sm">
@@ -125,31 +125,31 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
       </div>
 
       <div class="space-y-3">
-        {% for insumo in insumos %}
+        {% for medicamento in medicamentos %}
         <div class="bg-slate-800/90 border border-slate-700/60 rounded-2xl p-4 card-shadow card-shadow-hover transition-all duration-300 animate-scale-in border-l-4 
-                    {% if insumo.backup_unidades <= 5 %}border-l-rose-500
-                    {% elif insumo.backup_unidades <= 15 %}border-l-amber-500
+              {% if medicamento.cantidad_total <= 5 %}border-l-rose-500
+              {% elif medicamento.cantidad_total <= 15 %}border-l-amber-500
                     {% else %}border-l-emerald-500{% endif %}">
           <div class="flex items-start gap-4">
-            <div class="{% if insumo.backup_unidades <= 5 %}bg-rose-950/60 text-rose-400 border border-rose-800/40
-                        {% elif insumo.backup_unidades <= 15 %}bg-amber-950/60 text-amber-400 border border-amber-800/40
+            <div class="{% if medicamento.cantidad_total <= 5 %}bg-rose-950/60 text-rose-400 border border-rose-800/40
+            {% elif medicamento.cantidad_total <= 15 %}bg-amber-950/60 text-amber-400 border border-amber-800/40
                         {% else %}bg-emerald-950/60 text-emerald-400 border border-emerald-800/40{% endif %} p-3 rounded-xl">
               <i class="fa-solid fa-capsules text-xl"></i>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
-                  <h4 class="font-semibold text-white truncate text-base">{{ insumo.nombre }}</h4>
+                  <h4 class="font-semibold text-white truncate text-base">{{ medicamento.nombre }}</h4>
                   <p class="text-sm text-slate-400 mt-0.5">
-                    Stock disponible: <strong class="text-emerald-400 font-bold text-sm">{{ insumo.backup_unidades|default:0 }} pastillas</strong>
+                    Stock disponible: <strong class="text-emerald-400 font-bold text-sm">{{ medicamento.cantidad_total|default:0 }} pastillas</strong>
                   </p>
                 </div>
                 
-                {% if insumo.backup_unidades <= 5 %}
+                {% if medicamento.cantidad_total <= 5 %}
                 <span class="px-2.5 py-1 bg-rose-950/80 text-rose-300 border border-rose-800 text-xs font-semibold rounded-full whitespace-nowrap animate-pulse-soft">
                   Reponer Urgente
                 </span>
-                {% elif insumo.backup_unidades <= 15 %}
+                {% elif medicamento.cantidad_total <= 15 %}
                 <span class="px-2.5 py-1 bg-amber-950/80 text-amber-300 border border-amber-800 text-xs font-semibold rounded-full whitespace-nowrap">
                   Stock Medio
                 </span>
@@ -164,11 +164,11 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
               <form method="POST" action="{% url 'pastillero' %}" class="mt-4 flex items-center gap-2">
                 {% csrf_token %}
                 <input type="hidden" name="accion" value="tomar">
-                <input type="hidden" name="insumo" value="{{ insumo.id }}">
+                <input type="hidden" name="medicamento" value="{{ medicamento.id }}">
                 
                 <div class="flex items-center border border-slate-700 rounded-xl overflow-hidden bg-slate-900/80">
                   <span class="text-xs text-slate-400 px-3">Cant:</span>
-                  <input type="number" name="cantidad" min="1" max="{{ insumo.backup_unidades|default:'1' }}" value="1" 
+                  <input type="number" name="cantidad" min="1" max="{{ medicamento.cantidad_total|default:'1' }}" value="1" 
                          class="w-16 py-2 px-1 text-center bg-transparent border-0 font-bold text-white focus:outline-none">
                 </div>
 
@@ -183,7 +183,7 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
         </div>
         {% empty %}
         <div class="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-6 text-center card-shadow">
-          <p class="text-sm text-slate-400">No hay insumos registrados en este momento.</p>
+          <p class="text-sm text-slate-400">No hay medicamentos registrados en este momento.</p>
         </div>
         {% endfor %}
       </div>
@@ -204,7 +204,7 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
           <div class="timeline-dot relative text-blue-400">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <h4 class="font-semibold text-slate-200">{{ toma.insumo.nombre }}</h4>
+                <h4 class="font-semibold text-slate-200">{{ toma.nombre }}</h4>
                 <p class="text-xs text-slate-400 mt-0.5">
                   Cantidad: <span class="font-semibold text-slate-200">{{ toma.cantidad }} un.</span>
                 </p>

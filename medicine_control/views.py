@@ -344,10 +344,11 @@ def pastillero_view(request):
             cantidad_pastillas = int(request.POST.get("cantidad", 0))
 
             if nombre:
-                Insumo.objects.create(
+                Pastillero.objects.create(
                     nombre=nombre,
-                    stock_actual_cajas=0,
-                    backup_unidades=cantidad_pastillas
+                    cantidad=0,
+                    cantidad_total=cantidad_pastillas,
+                    fecha_hora=timezone.now()
                 )
                 messages.success(request, f"Medicamento '{nombre}' agregado con {cantidad_pastillas} unidades.")
             else:
@@ -355,33 +356,23 @@ def pastillero_view(request):
 
         # OPCIÓN B: Registrar una toma diaria
         elif accion == "tomar":
-            insumo_id = request.POST.get("insumo")
+            medicamento_id = request.POST.get("medicamento")
             cantidad_tomada = int(request.POST.get("cantidad", 1))
 
             try:
-                insumo = Insumo.objects.get(id=insumo_id)
+                medicamento = Pastillero.objects.get(id=medicamento_id)
 
-                # 1. Validar y descontar stock del Insumo
-                if insumo.backup_unidades >= cantidad_tomada:
-                    insumo.backup_unidades -= cantidad_tomada
-                else:
-                    insumo.backup_unidades = max(0, insumo.backup_unidades - cantidad_tomada)
+                medicamento.cantidad_total = max(0, medicamento.cantidad_total - cantidad_tomada)
+                medicamento.cantidad = cantidad_tomada
+                medicamento.fecha_hora = timezone.now()
+                medicamento.save()
                 
-                insumo.save()
-
-                # 2. Registrar la toma en el modelo Pastillero (solo campos existentes)
-                Pastillero.objects.create(
-                    insumo=insumo,
-                    cantidad=cantidad_tomada,
-                    fecha_hora=timezone.now()
-                )
-
                 messages.success(
                     request, 
-                    f"Toma de {cantidad_tomada} u. de {insumo.nombre} registrada. Quedan {insumo.backup_unidades} pastillas."
+                    f"Toma de {cantidad_tomada} u. de {medicamento.nombre} registrada. Quedan {medicamento.cantidad_total} pastillas."
                 )
 
-            except Insumo.DoesNotExist:
+            except Pastillero.DoesNotExist:
                 messages.error(request, "El medicamento seleccionado no existe.")
             except Exception as e:
                 messages.error(request, f"Error al procesar la toma: {str(e)}")
@@ -389,12 +380,12 @@ def pastillero_view(request):
         return redirect('pastillero')
 
     # GET: Cargar datos para el renderizado
-    insumos = Insumo.objects.exclude(nombre__icontains='Sonda')
-    tomas = Pastillero.objects.select_related('insumo').all().order_by('-fecha_hora')[:20]
+    medicamentos = Pastillero.objects.all().order_by('nombre')
+    tomas = Pastillero.objects.all().order_by('-fecha_hora')[:20]
     envios = Envio.objects.all()
 
     return render(request, 'medicine_control/pastillero.html', {
-        'insumos': insumos,
+        'medicamentos': medicamentos,
         'tomas': tomas,
         'envios': envios,
     })
