@@ -221,34 +221,6 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
     </section>
     {% endif %}
 
-    <!-- Trámites y Envíos -->
-    {% if envios %}
-    <section class="bg-slate-800/80 border border-slate-700/50 rounded-2xl p-5 card-shadow animate-slide-up">
-      <div class="flex items-center justify-between mb-5">
-        <h3 class="text-lg font-bold text-white">Trámites y Envíos en curso</h3>
-        <i class="fa-solid fa-truck text-blue-400 text-lg"></i>
-      </div>
-      
-      <div class="space-y-0">
-        {% for envio in envios %}
-        <div class="relative pl-8 pb-6">
-          {% if not forloop.last %}<div class="absolute left-0 top-0 bottom-0 w-0.5 timeline-line"></div>{% endif %}
-          <div class="timeline-dot relative text-blue-400">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <p class="text-xs text-blue-400 font-semibold">CANTIDAD: {{ envio.cantidad }} u.</p>
-                <h4 class="font-semibold text-slate-200 mt-1">Trámite / Envío</h4>
-                <p class="text-sm text-slate-400">Estado: {% if envio.recibido %}Completado{% else %}En camino{% endif %}</p>
-              </div>
-              <i class="fa-solid fa-box text-blue-400"></i>
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-    </section>
-    {% endif %}
-
   </main>
 
   <!-- Botón Flotante + (FAB) -->
