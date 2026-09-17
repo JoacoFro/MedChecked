@@ -20,7 +20,7 @@ load_dotenv(BASE_DIR / ".env")
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
-from medicine_control.models import Insumo, Pedido, Salida, Envio
+from medicine_control.models import Insumo, Pedido, Salida, Envio, Pastillero
 import google.generativeai as genai
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -67,6 +67,37 @@ def consultar_estado_stock():
         return reporte
     except Exception as e:
         return f"Error al consultar stock: {e}"
+
+def consultar_stock_pastillero():
+    """Consulta el stock de medicamentos guardado en la tabla Pastillero."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        medicamentos = Pastillero.objects.order_by('nombre')
+        if not medicamentos.exists():
+            return "No hay medicamentos registrados en el pastillero."
+
+        reporte = "💊 **Stock del Pastillero:**\n"
+        for medicamento in medicamentos:
+            reporte += f"• **{medicamento.nombre}**: {medicamento.cantidad_total} pastillas.\n"
+        return reporte
+    except Exception as e:
+        return f"Error al consultar el stock del pastillero: {e}"
+
+def consultar_ultimas_tomas():
+    """Consulta los últimos registros de toma guardados en Pastillero."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        tomas = Pastillero.objects.order_by('-fecha_hora')[:10]
+        if not tomas:
+            return "No hay tomas registradas en el pastillero."
+
+        reporte = "🗓 **Últimas tomas:**\n"
+        for toma in tomas:
+            fecha = timezone.localtime(toma.fecha_hora).strftime('%d/%m/%Y %H:%M')
+            reporte += f"• **{toma.nombre}**: {toma.cantidad} un. ({fecha})\n"
+        return reporte
+    except Exception as e:
+        return f"Error al consultar las últimas tomas: {e}"
 
 def registrar_movimiento(nombre_insumo: str, accion: str, cantidad: int, tipo_stock: str):
     """
@@ -289,6 +320,7 @@ historiales = {}
 async def mostrar_menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE, saludo: str = "Hola Joaco, ¿cómo te ayudo?"):
     keyboard = [
         [InlineKeyboardButton("📦 Stock", callback_data="menu_stock")],
+        [InlineKeyboardButton("💊 Pastillero", callback_data="menu_pastillero")],
         [InlineKeyboardButton("📋 Trámites", callback_data="menu_tramites")],
         [InlineKeyboardButton("💬 Hablar libremente con Astrana", callback_data="op_chat")]
     ]
@@ -304,6 +336,14 @@ async def mostrar_submenu_stock(query):
         [InlineKeyboardButton("📊 Consultar Stock", callback_data="op_stock_consultar")],
         [InlineKeyboardButton("➕ Agregar Stock", callback_data="op_stock_agregar")],
         [InlineKeyboardButton("➖ Quitar Stock", callback_data="op_stock_quitar")],
+        [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
+    ]
+    await query.edit_message_text("📦 **Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+async def mostrar_submenu_pastillero(query):
+    keyboard = [
+        [InlineKeyboardButton("💊 Stock Pastillas", callback_data="op_pastillero_stock")],
+        [InlineKeyboardButton("🗓 Últimas tomas", callback_data="op_pastillero_tomas")],
         [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
     ]
     await query.edit_message_text("📦 **Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -335,6 +375,8 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_menu_principal(update, context)
     elif opcion == "menu_stock":
         await mostrar_submenu_stock(query)
+    elif opcion == "menu_pastillero":
+        await mostrar_submenu_pastillero(query)
     elif opcion == "menu_tramites":
         await mostrar_submenu_tramites(query)
 
@@ -346,6 +388,14 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("➕ **Agregar Stock:**\nEscribime qué insumo ingresó (ejemplo: *'Ingresaron 2 cajas de sondas'*).", reply_markup=obtener_boton_volver(), parse_mode="Markdown")
     elif opcion == "op_stock_quitar":
         await query.edit_message_text("➖ **Quitar Stock:**\nEscribime qué insumo retiraste (ejemplo: *'Descontar 2 cajas de sondas'*).", reply_markup=obtener_boton_volver(), parse_mode="Markdown")
+
+    # Submenú Pastillero
+    elif opcion == "op_pastillero_stock":
+        res = await sync_to_async(consultar_stock_pastillero)()
+        await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
+    elif opcion == "op_pastillero_tomas":
+        res = await sync_to_async(consultar_ultimas_tomas)()
+        await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
 
     # Submenú Trámites
     elif opcion == "op_tramites_estado":

@@ -361,15 +361,15 @@ def pastillero_view(request):
 
             try:
                 medicamento = Pastillero.objects.get(id=medicamento_id)
-
-                medicamento.cantidad_total = max(0, medicamento.cantidad_total - cantidad_tomada)
-                medicamento.cantidad = cantidad_tomada
+                cantidad_real = min(cantidad_tomada, medicamento.cantidad_total)
+                medicamento.cantidad_total -= cantidad_real
+                medicamento.cantidad = cantidad_real
                 medicamento.fecha_hora = timezone.now()
                 medicamento.save()
-                
+
                 messages.success(
                     request, 
-                    f"Toma de {cantidad_tomada} u. de {medicamento.nombre} registrada. Quedan {medicamento.cantidad_total} pastillas."
+                    f"Toma de {cantidad_real} u. de {medicamento.nombre} registrada. Quedan {medicamento.cantidad_total} pastillas."
                 )
 
             except Pastillero.DoesNotExist:
