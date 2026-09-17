@@ -346,6 +346,7 @@ def pastillero_view(request):
             if nombre:
                 Insumo.objects.create(
                     nombre=nombre,
+                    stock_actual_cajas=0,
                     backup_unidades=cantidad_pastillas
                 )
                 messages.success(request, f"Medicamento '{nombre}' agregado con {cantidad_pastillas} unidades.")
@@ -392,7 +393,7 @@ def pastillero_view(request):
     tomas = Pastillero.objects.select_related('insumo').all().order_by('-fecha_hora')[:20]
     envios = Envio.objects.all()
 
-    return render(request, 'pastillero.html', {
+    return render(request, 'medicine_control/pastillero.html', {
         'insumos': insumos,
         'tomas': tomas,
         'envios': envios,
