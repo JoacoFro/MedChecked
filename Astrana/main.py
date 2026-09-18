@@ -347,6 +347,33 @@ def medicamento_mencionado(texto):
     return None
 
 
+def consulta_medicamento_generica(texto):
+    texto = normalizar_texto(texto)
+    return bool(re.search(r'\b(algun|alguno|alguna|cualquier|medicamentos?)\b', texto))
+
+
+def respuesta_si(texto):
+    return normalizar_texto(texto).strip(' .!?') in {
+        'si', 's', 'dale', 'claro', 'por favor', 'agregalo', 'agregalo por favor',
+    }
+
+
+def respuesta_no(texto):
+    return normalizar_texto(texto).strip(' .!?') in {
+        'no', 'n', 'por ahora no', 'dejalo', 'dejalo asi',
+    }
+
+
+def crear_medicamento_pastillero(nombre, cantidad):
+    return Pastillero.objects.create(
+        nombre=nombre.strip(),
+        cantidad=0,
+        cantidad_total=cantidad,
+        fecha_hora=timezone.now(),
+        estado_diario='pendiente',
+    )
+
+
 def consultar_tomas_medicamentos(texto_usuario, solo_ultimas=False):
     """Consulta tomas reales, opcionalmente filtradas por medicamento y fecha."""
     try:
@@ -1121,6 +1148,43 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        alta_pendiente = context.user_data.get('alta_medicamento_pendiente')
+        if alta_pendiente == 'confirmar':
+            if respuesta_si(texto_usuario):
+                context.user_data['alta_medicamento_pendiente'] = 'nombre'
+                await update.message.reply_text('Perfecto. ¿Cuál es el nombre del medicamento?')
+            elif respuesta_no(texto_usuario):
+                context.user_data.pop('alta_medicamento_pendiente', None)
+                await update.message.reply_text('OK Joaco. ¿Necesitás algo más?', reply_markup=obtener_boton_volver())
+            else:
+                await update.message.reply_text('Respondeme sí para agregarlo o no para cancelar.')
+            return
+
+        if alta_pendiente == 'nombre':
+            nombre = texto_usuario.strip()
+            if len(nombre) < 2:
+                await update.message.reply_text('Necesito un nombre válido para el medicamento.')
+                return
+            context.user_data['medicamento_nuevo_nombre'] = nombre
+            context.user_data['alta_medicamento_pendiente'] = 'cantidad'
+            await update.message.reply_text(f'¿Cuántas pastillas de {nombre} tenés?')
+            return
+
+        if alta_pendiente == 'cantidad':
+            cantidad_match = re.search(r'\d+', texto_usuario)
+            if not cantidad_match or int(cantidad_match.group()) <= 0:
+                await update.message.reply_text('Decime una cantidad válida mayor que cero.')
+                return
+            cantidad = int(cantidad_match.group())
+            nombre = context.user_data.pop('medicamento_nuevo_nombre')
+            medicamento = await sync_to_async(crear_medicamento_pastillero)(nombre, cantidad)
+            context.user_data.pop('alta_medicamento_pendiente', None)
+            await update.message.reply_text(
+                f'✅ Agregué {medicamento.nombre} con {medicamento.cantidad_total} pastillas.',
+                reply_markup=obtener_boton_volver(),
+            )
+            return
+
         comando_memoria = await sync_to_async(procesar_comando_memoria)(
             str(update.effective_chat.id), texto_usuario
         )
@@ -1176,6 +1240,14 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if intencion == 'verificar_toma_medicamento':
+            medicamento = await sync_to_async(medicamento_mencionado)(texto_usuario)
+            if medicamento is None and not consulta_medicamento_generica(texto_usuario):
+                context.user_data['alta_medicamento_pendiente'] = 'confirmar'
+                await update.message.reply_text(
+                    '❌ No encontré un medicamento registrado con ese nombre.\n'
+                    '¿Te gustaría que lo agreguemos?'
+                )
+                return
             reporte = await sync_to_async(consultar_si_tome_medicamento)(texto_usuario)
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
