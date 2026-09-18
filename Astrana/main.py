@@ -147,6 +147,30 @@ def interpretar_aclaracion_sondas(texto):
     return None
 
 
+def detectar_consulta_con_memoria(chat_id, texto_usuario):
+    """Busca aprendizajes confirmados del chat antes de usar reglas generales."""
+    texto = normalizar_texto(texto_usuario)
+    palabras_texto = set(re.findall(r'\b\w+\b', texto))
+    if not palabras_texto:
+        return None
+
+    aprendizajes = AprendizajeAstrana.objects.filter(
+        chat_id=str(chat_id), confirmado=True
+    ).order_by('-fecha')
+    mejor_intencion = None
+    mejor_puntaje = 0
+    for aprendizaje in aprendizajes:
+        palabras_frase = set(re.findall(r'\b\w+\b', normalizar_texto(aprendizaje.frase)))
+        if not palabras_frase:
+            continue
+        coincidencias = len(palabras_texto & palabras_frase)
+        puntaje = coincidencias / len(palabras_frase)
+        if puntaje >= 0.6 and puntaje > mejor_puntaje:
+            mejor_puntaje = puntaje
+            mejor_intencion = aprendizaje.intencion
+    return mejor_intencion
+
+
 def consultar_autonomia_sondas():
     """Devuelve la autonomía calculada para los insumos de Sondas."""
     try:
@@ -930,7 +954,9 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
 
-        intencion = detectar_consulta_datos(texto_usuario)
+        chat_id = str(update.effective_chat.id)
+        intencion = await sync_to_async(detectar_consulta_con_memoria)(chat_id, texto_usuario)
+        intencion = intencion or detectar_consulta_datos(texto_usuario)
         if intencion == 'movimientos_sondas':
             reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
