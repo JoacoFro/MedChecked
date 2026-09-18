@@ -321,23 +321,45 @@ def cerrar_tramite_pedido(tipo_tramite: str, tipo_stock: str = "cajas"):
         return f"❌ Error técnico al procesar el cierre: {str(e)}"
 
 def obtener_resumen_pedidos():
-    """Consulta los trámites actuales en curso."""
+    """Consulta trámites en curso y los 10 cerrados más recientes."""
     try:
         connection.close_if_unusable_or_obsolete()
-        hoy = timezone.now().date()
-        envio_os_mes = Envio.objects.filter(tipo='os', fecha_solicitud__month=hoy.month).last()
-        txt = "📋 *Estado de Gestión Mensual:*\n\n"
-        if not envio_os_mes:
-            txt += "⚠️ *Atención:* No iniciaste el trámite de OS este mes.\n\n"
+        en_curso = Envio.objects.filter(
+            estado='tramite'
+        ).order_by('-fecha_solicitud', '-id')[:10]
+        cerrados = Envio.objects.filter(
+            estado='recibido',
+            fecha_cierre__isnull=False,
+        ).order_by('-fecha_cierre', '-id')[:10]
+
+        reporte = "📋 **Trámites en curso:**\n"
+        if en_curso:
+            for tramite in en_curso:
+                reporte += (
+                    f"• **{tramite.get_tipo_display()}** | "
+                    f"Estado: {tramite.get_estado_display()} | "
+                    f"Cantidad: {tramite.cantidad_pedida} | "
+                    f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
+                    f"Demora: {tramite.demora_real} días\n"
+                )
         else:
-            txt += f"✅ *Trámite OS:* {envio_os_mes.get_estado_display()}\n\n"
-        
-        pendientes = Envio.objects.filter(estado='tramite')
-        if pendientes.exists():
-            txt += "*En curso:*\n"
-            for e in pendientes:
-                txt += f"🔹 {e.tipo.upper()}: Hace {(hoy - e.fecha_solicitud).days} días.\n"
-        return txt
+            reporte += "No hay trámites en curso.\n"
+
+        reporte += "\n✅ **Trámites cerrados recientemente:**\n"
+        if cerrados:
+            for tramite in cerrados:
+                reporte += (
+                    f"• **{tramite.get_tipo_display()}** | "
+                    f"Estado: {tramite.get_estado_display()} | "
+                    f"Cantidad: {tramite.cantidad_pedida} | "
+                    f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
+                    f"Cierre: {tramite.fecha_cierre:%d/%m/%Y} | "
+                    f"Demora: {tramite.demora_real} días\n"
+                )
+        else:
+            reporte += "No hay trámites cerrados recientemente.\n"
+
+        return reporte
     except Exception as e:
         return f"Error en resumen: {e}"
 
