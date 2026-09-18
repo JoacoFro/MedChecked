@@ -323,6 +323,90 @@ def consultar_ultimas_tomas():
     except Exception as e:
         return f"Error al consultar las últimas tomas: {e}"
 
+
+def rango_fecha_consulta(texto):
+    hoy = timezone.localdate()
+    texto = normalizar_texto(texto)
+    if 'ayer' in texto:
+        return hoy - timedelta(days=1), hoy - timedelta(days=1)
+    if 'esta semana' in texto or 'semana' in texto:
+        inicio = hoy - timedelta(days=hoy.weekday())
+        return inicio, hoy
+    if 'hoy' in texto or 'dia' in texto or 'día' in texto:
+        return hoy, hoy
+    return None, None
+
+
+def medicamento_mencionado(texto):
+    texto_normalizado = normalizar_texto(texto)
+    medicamentos = Pastillero.objects.all().order_by('-nombre')
+    for medicamento in medicamentos:
+        nombre = normalizar_texto(medicamento.nombre)
+        if nombre and nombre in texto_normalizado:
+            return medicamento
+    return None
+
+
+def consultar_tomas_medicamentos(texto_usuario, solo_ultimas=False):
+    """Consulta tomas reales, opcionalmente filtradas por medicamento y fecha."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        fecha_inicio, fecha_fin = rango_fecha_consulta(texto_usuario)
+        medicamento = medicamento_mencionado(texto_usuario)
+        tomas = TomaPastillero.objects.select_related('medicamento').all()
+        if medicamento:
+            tomas = tomas.filter(medicamento_id=medicamento.id)
+        if fecha_inicio:
+            tomas = tomas.filter(fecha_hora__date__gte=fecha_inicio, fecha_hora__date__lte=fecha_fin)
+        elif not solo_ultimas and any(
+            palabra in normalizar_texto(texto_usuario).split()
+            for palabra in ('tome', 'tome', 'tomaste', 'tomado')
+        ):
+            hoy = timezone.localdate()
+            tomas = tomas.filter(fecha_hora__date=hoy)
+            fecha_inicio = fecha_fin = hoy
+        tomas = tomas.order_by('-fecha_hora')[:10]
+
+        nombre = medicamento.nombre if medicamento else 'los medicamentos registrados'
+        periodo = 'hoy' if fecha_inicio == timezone.localdate() else ''
+        if fecha_inicio and fecha_inicio != fecha_fin:
+            periodo = f'del {fecha_inicio:%d/%m/%Y} al {fecha_fin:%d/%m/%Y}'
+        elif fecha_inicio:
+            periodo = f'el {fecha_inicio:%d/%m/%Y}'
+
+        if solo_ultimas:
+            encabezado = f'🗓 **Últimas tomas de {nombre}:**'
+        else:
+            encabezado = f'💊 **Tomas de {nombre} {periodo}:**'.replace('  ', ' ')
+        if not tomas:
+            return f'No hay tomas registradas de {nombre} {periodo}.'.replace('  ', ' ')
+
+        reporte = encabezado + '\n'
+        for toma in tomas:
+            fecha = timezone.localtime(toma.fecha_hora).strftime('%d/%m/%Y %H:%M')
+            reporte += f'• **{toma.medicamento.nombre}**: {toma.cantidad} un. ({fecha})\n'
+        return reporte
+    except Exception as error:
+        return f'Error al consultar las tomas del pastillero: {error}'
+
+
+def consultar_si_tome_medicamento(texto_usuario):
+    """Responde si hubo al menos una toma en el período pedido."""
+    medicamento = medicamento_mencionado(texto_usuario)
+    if medicamento is None:
+        return consultar_tomas_medicamentos(texto_usuario)
+    fecha_inicio, fecha_fin = rango_fecha_consulta(texto_usuario)
+    if fecha_inicio is None:
+        fecha_inicio = fecha_fin = timezone.localdate()
+    tomas = TomaPastillero.objects.filter(medicamento=medicamento)
+    if fecha_inicio:
+        tomas = tomas.filter(fecha_hora__date__gte=fecha_inicio, fecha_hora__date__lte=fecha_fin)
+    existe = tomas.exists()
+    periodo = 'hoy' if fecha_inicio == timezone.localdate() else 'en el período consultado'
+    if existe:
+        return f'✅ Sí, registraste una toma de {medicamento.nombre} {periodo}.'
+    return f'❌ No encontré una toma de {medicamento.nombre} {periodo}.'
+
 def registrar_movimiento(nombre_insumo: str, accion: str, cantidad: int, tipo_stock: str):
     """
     Registra la carga (pedido) o descarga (consumo) de insumos en el sistema.
@@ -797,6 +881,20 @@ def detectar_consulta_datos(texto_usuario):
     }):
         return 'aclarar_sondas'
 
+    habla_de_pastillero = bool(palabras & {
+        'pastillero', 'pastillas', 'medicamento', 'medicamentos',
+        'medicacion', 'medicación', 'tomas', 'toma', 'tableta', 'comprimido',
+        'tome', 'tomé', 'tomaste', 'tomado',
+    })
+    consulta_tomas = bool(palabras & {
+        'toma', 'tomas', 'tomaste', 'tome', 'tomé', 'tomado',
+        'ultimas', 'últimas', 'historial', 'registrada', 'registre',
+    })
+    if habla_de_pastillero and consulta_tomas:
+        if palabras & {'ultima', 'ultimas', 'última', 'últimas', 'historial'}:
+            return 'ultimas_tomas_pastillero'
+        return 'verificar_toma_medicamento'
+
     habla_de_tramites = bool(palabras & {
         'tramite', 'tramites', 'envio', 'envios',
     })
@@ -1067,6 +1165,18 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if intencion == 'movimientos_tramites':
             reporte = await sync_to_async(consultar_ultimos_tramites)()
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
+            return
+
+        if intencion == 'ultimas_tomas_pastillero':
+            reporte = await sync_to_async(consultar_tomas_medicamentos)(
+                texto_usuario, solo_ultimas=True
+            )
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
+            return
+
+        if intencion == 'verificar_toma_medicamento':
+            reporte = await sync_to_async(consultar_si_tome_medicamento)(texto_usuario)
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
 
