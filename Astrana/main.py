@@ -696,6 +696,16 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        # Esta consulta es determinista y no necesita pasar por el function-calling de Gemini.
+        pide_movimientos_sondas = (
+            'sonda' in texto_lower
+            and any(palabra in texto_lower for palabra in ('ingreso', 'egreso', 'salida', 'movimiento'))
+        )
+        if pide_movimientos_sondas:
+            reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
+            return
+
         if gemini_client is None:
             await update.message.reply_text(
                 '⚠️ El chat de Astrana no está disponible porque Gemini no se inicializó.'
