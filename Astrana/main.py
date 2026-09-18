@@ -754,22 +754,13 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        intencion = 'otro'
-        if gemini_client is not None:
-            try:
-                intencion = await asyncio.wait_for(
-                    asyncio.to_thread(clasificar_intencion, texto_usuario),
-                    timeout=15,
-                )
-            except Exception:
-                logger.exception('No se pudo clasificar la intención; se usa el fallback textual.')
-
-        # Gemini interpreta lenguaje natural; Django consulta los datos reales.
+        # Las consultas de datos se resuelven directamente en Django para evitar
+        # una llamada de clasificación adicional y obtener siempre datos reales.
         pide_movimientos_sondas = (
             'sonda' in texto_lower
             and any(palabra in texto_lower for palabra in ('ingreso', 'egreso', 'salida', 'movimiento'))
         )
-        if intencion == 'movimientos_sondas' or pide_movimientos_sondas:
+        if pide_movimientos_sondas:
             reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
@@ -780,10 +771,11 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'reporte', 'últimos', 'ultimos', 'movimiento', 'movimientos',
                 'historial', 'registro', 'registros', 'estado', 'información',
                 'informacion', 'situación', 'situacion', 'envío', 'envio',
-                'envíos', 'envios', 'cuáles', 'cuales',
+                'envíos', 'envios', 'cuáles', 'cuales', 'abierto', 'abiertos',
+                'pendiente', 'pendientes', 'cerrado', 'cerrados', 'hay',
             ))
         )
-        if intencion == 'movimientos_tramites' or pide_reporte_tramites:
+        if pide_reporte_tramites:
             reporte = await sync_to_async(consultar_ultimos_tramites)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
