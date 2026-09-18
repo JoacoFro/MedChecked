@@ -4,6 +4,8 @@ import asyncio
 import threading
 import logging
 import json
+import re
+import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -594,6 +596,47 @@ else:
 historiales = {}
 
 
+def normalizar_texto(texto):
+    texto = unicodedata.normalize('NFD', texto.lower())
+    return ''.join(
+        caracter for caracter in texto
+        if unicodedata.category(caracter) != 'Mn'
+    )
+
+
+def detectar_consulta_datos(texto_usuario):
+    """Simula una clasificación de intención para enrutar consultas a Django."""
+    texto = normalizar_texto(texto_usuario)
+    palabras = set(re.findall(r'\b\w+\b', texto))
+
+    habla_de_sondas = 'sonda' in palabras or 'sondas' in palabras
+    habla_de_movimientos = bool(palabras & {
+        'movimiento', 'movimientos', 'ingreso', 'ingresos',
+        'egreso', 'egresos', 'salida', 'salidas',
+    })
+    if habla_de_sondas and habla_de_movimientos:
+        return 'movimientos_sondas'
+
+    habla_de_tramites = bool(palabras & {
+        'tramite', 'tramites', 'envio', 'envios',
+    })
+    consulta_informacion = bool(palabras & {
+        'reporte', 'ultimo', 'ultimos', 'movimiento', 'movimientos',
+        'historial', 'registro', 'registros', 'estado', 'informacion',
+        'situacion', 'cual', 'cuales', 'abierto', 'abiertos',
+        'pendiente', 'pendientes', 'cerrado', 'cerrados', 'hay', 'tengo',
+        'paso', 'pasaron', 'sucedio', 'sucede',
+    })
+    accion_operativa = bool(palabras & {
+        'iniciar', 'inicia', 'cerrar', 'cierra', 'crear',
+        'agregar', 'agrega', 'quitar', 'quita',
+    })
+    if habla_de_tramites and consulta_informacion and not accion_operativa:
+        return 'movimientos_tramites'
+
+    return None
+
+
 def clasificar_intencion(texto_usuario):
     """Usa Gemini solo para interpretar la intención; los datos los consulta Django."""
     if gemini_client is None or gemini_classifier_config is None:
@@ -754,28 +797,13 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        # Las consultas de datos se resuelven directamente en Django para evitar
-        # una llamada de clasificación adicional y obtener siempre datos reales.
-        pide_movimientos_sondas = (
-            'sonda' in texto_lower
-            and any(palabra in texto_lower for palabra in ('ingreso', 'egreso', 'salida', 'movimiento'))
-        )
-        if pide_movimientos_sondas:
+        intencion = detectar_consulta_datos(texto_usuario)
+        if intencion == 'movimientos_sondas':
             reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
 
-        pide_reporte_tramites = (
-            any(palabra in texto_lower for palabra in ('tramite', 'trámite', 'tramites', 'trámites'))
-            and any(palabra in texto_lower for palabra in (
-                'reporte', 'últimos', 'ultimos', 'movimiento', 'movimientos',
-                'historial', 'registro', 'registros', 'estado', 'información',
-                'informacion', 'situación', 'situacion', 'envío', 'envio',
-                'envíos', 'envios', 'cuáles', 'cuales', 'abierto', 'abiertos',
-                'pendiente', 'pendientes', 'cerrado', 'cerrados', 'hay',
-            ))
-        )
-        if pide_reporte_tramites:
+        if intencion == 'movimientos_tramites':
             reporte = await sync_to_async(consultar_ultimos_tramites)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
