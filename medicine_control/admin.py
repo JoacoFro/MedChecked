@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Insumo, Pedido, Salida, HistorialMovimiento, Envio, Pastillero
+from .models import Insumo, Pedido, Salida, HistorialMovimiento, Envio, Pastillero, TomaPastillero
 
 # Registro simple para modelos básicos
 admin.site.register(Pedido)
@@ -25,7 +25,14 @@ class EnvioAdmin(admin.ModelAdmin):
 
 @admin.register(Pastillero)
 class PastilleroAdmin(admin.ModelAdmin):
-    list_display = ('fecha_hora', 'nombre', 'cantidad', 'cantidad_total')
-    list_filter = ('fecha_hora',)
+    list_display = ('nombre', 'cantidad_total', 'estado_diario', 'estado_diario_fecha')
+    list_filter = ('estado_diario', 'estado_diario_fecha')
     search_fields = ('nombre',)
+
+
+@admin.register(TomaPastillero)
+class TomaPastilleroAdmin(admin.ModelAdmin):
+    list_display = ('fecha_hora', 'medicamento', 'cantidad')
+    list_filter = ('fecha_hora',)
+    search_fields = ('medicamento__nombre',)
     ordering = ('-fecha_hora',)

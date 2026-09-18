@@ -2,12 +2,14 @@ import os
 import sys
 import asyncio
 import threading
+from datetime import datetime, timedelta
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 import django
-from django.db import connection
+from django.db import connection, transaction
 from django.utils import timezone
 from asgiref.sync import sync_to_async
 
@@ -20,7 +22,7 @@ load_dotenv(BASE_DIR / ".env")
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
-from medicine_control.models import Insumo, Pedido, Salida, Envio, Pastillero
+from medicine_control.models import Insumo, Pedido, Salida, Envio, Pastillero, TomaPastillero
 import google.generativeai as genai
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -87,14 +89,14 @@ def consultar_ultimas_tomas():
     """Consulta los últimos registros de toma guardados en Pastillero."""
     try:
         connection.close_if_unusable_or_obsolete()
-        tomas = Pastillero.objects.order_by('-fecha_hora')[:10]
+        tomas = TomaPastillero.objects.select_related('medicamento').order_by('-fecha_hora')[:10]
         if not tomas:
             return "No hay tomas registradas en el pastillero."
 
         reporte = "🗓 **Últimas tomas:**\n"
         for toma in tomas:
             fecha = timezone.localtime(toma.fecha_hora).strftime('%d/%m/%Y %H:%M')
-            reporte += f"• **{toma.nombre}**: {toma.cantidad} un. ({fecha})\n"
+            reporte += f"• **{toma.medicamento.nombre}**: {toma.cantidad} un. ({fecha})\n"
         return reporte
     except Exception as e:
         return f"Error al consultar las últimas tomas: {e}"
@@ -305,6 +307,151 @@ def obtener_resumen_pedidos():
 # --- 4. CONFIGURACIÓN DE GEMINI Y BOT ---
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+BOT_TIME_ZONE = ZoneInfo('America/Argentina/Buenos_Aires')
+recordatorio_tasks = {}
+
+
+def _estado_pastillero(medicamento_id):
+    hoy = timezone.localdate()
+    medicamento = Pastillero.objects.get(id=medicamento_id)
+    if medicamento.estado_diario_fecha != hoy:
+        medicamento.estado_diario = 'pendiente'
+        medicamento.estado_diario_fecha = hoy
+        medicamento.save(update_fields=['estado_diario', 'estado_diario_fecha'])
+    return medicamento
+
+
+def medicamentos_pendientes_ids():
+    connection.close_if_unusable_or_obsolete()
+    hoy = timezone.localdate()
+    return list(Pastillero.objects.filter(cantidad_total__gt=0).exclude(
+        estado_diario_fecha=hoy,
+        estado_diario__in=['tomado', 'omitido'],
+    ).values_list('id', flat=True))
+
+
+def registrar_toma_recordatorio(medicamento_id):
+    hoy = timezone.localdate()
+    with transaction.atomic():
+        medicamento = Pastillero.objects.select_for_update().get(id=medicamento_id)
+        if medicamento.estado_diario_fecha == hoy and medicamento.estado_diario in ['tomado', 'omitido']:
+            return medicamento, False, 'ya_procesado'
+        if medicamento.cantidad_total <= 0:
+            medicamento.estado_diario = 'omitido'
+            medicamento.estado_diario_fecha = hoy
+            medicamento.save(update_fields=['estado_diario', 'estado_diario_fecha'])
+            return medicamento, False, 'sin_stock'
+
+        medicamento.cantidad_total -= 1
+        medicamento.cantidad = 1
+        medicamento.fecha_hora = timezone.now()
+        medicamento.estado_diario = 'tomado'
+        medicamento.estado_diario_fecha = hoy
+        medicamento.save(update_fields=[
+            'cantidad_total', 'cantidad', 'fecha_hora',
+            'estado_diario', 'estado_diario_fecha',
+        ])
+        TomaPastillero.objects.create(medicamento=medicamento, cantidad=1)
+        return medicamento, True, 'tomado'
+
+
+def omitir_medicamento_hoy(medicamento_id):
+    hoy = timezone.localdate()
+    with transaction.atomic():
+        medicamento = Pastillero.objects.select_for_update().get(id=medicamento_id)
+        if medicamento.estado_diario_fecha != hoy or medicamento.estado_diario not in ['tomado', 'omitido']:
+            medicamento.estado_diario = 'omitido'
+            medicamento.estado_diario_fecha = hoy
+            medicamento.save(update_fields=['estado_diario', 'estado_diario_fecha'])
+        return medicamento
+
+
+async def enviar_recordatorio(application, medicamento_id):
+    if not TELEGRAM_CHAT_ID:
+        return
+    medicamento = await sync_to_async(_estado_pastillero)(medicamento_id)
+    if medicamento.estado_diario != 'pendiente' or medicamento.cantidad_total <= 0:
+        return
+    botones = InlineKeyboardMarkup([
+        [InlineKeyboardButton('✅ Confirmar Toma', callback_data=f'tomar_medicamento:{medicamento_id}')],
+        [InlineKeyboardButton('🙈 Olvidar por hoy', callback_data=f'ignorar_medicamento:{medicamento_id}')],
+    ])
+    await application.bot.send_message(
+        chat_id=TELEGRAM_CHAT_ID,
+        text=f'💊 ¿Tomaste {medicamento.nombre}?',
+        reply_markup=botones,
+    )
+
+
+async def reintentar_recordatorio(application, medicamento_id):
+    try:
+        await enviar_recordatorio(application, medicamento_id)
+        while True:
+            await asyncio.sleep(3600)
+            pendiente = await sync_to_async(medicamentos_pendientes_ids)()
+            if medicamento_id not in pendiente:
+                return
+            await enviar_recordatorio(application, medicamento_id)
+    except asyncio.CancelledError:
+        return
+    except Exception as error:
+        print(f'Error en recordatorio del medicamento {medicamento_id}: {error}')
+    finally:
+        recordatorio_tasks.pop(medicamento_id, None)
+
+
+async def enviar_recordatorios_del_dia(application):
+    for medicamento_id in await sync_to_async(medicamentos_pendientes_ids)():
+        tarea_anterior = recordatorio_tasks.get(medicamento_id)
+        if tarea_anterior and not tarea_anterior.done():
+            continue
+        recordatorio_tasks[medicamento_id] = asyncio.create_task(
+            reintentar_recordatorio(application, medicamento_id)
+        )
+
+
+def proxima_hora_recordatorio():
+    ahora = datetime.now(BOT_TIME_ZONE)
+    for dias in range(8):
+        fecha = ahora.date() + timedelta(days=dias)
+        hora = (11, 0) if fecha.weekday() >= 5 else (7, 15)
+        candidato = datetime(
+            fecha.year,
+            fecha.month,
+            fecha.day,
+            hora[0],
+            hora[1],
+            tzinfo=BOT_TIME_ZONE,
+        )
+        if candidato > ahora:
+            return candidato
+    raise RuntimeError('No se pudo calcular el próximo horario del pastillero')
+
+
+async def programador_recordatorios(application):
+    try:
+        while True:
+            siguiente = proxima_hora_recordatorio()
+            espera = max(1, (siguiente - datetime.now(BOT_TIME_ZONE)).total_seconds())
+            await asyncio.sleep(espera)
+            await enviar_recordatorios_del_dia(application)
+    except asyncio.CancelledError:
+        return
+
+
+async def iniciar_recordatorios(application):
+    application.bot_data['programador_recordatorios'] = asyncio.create_task(
+        programador_recordatorios(application)
+    )
+
+
+async def detener_recordatorios(application):
+    tarea = application.bot_data.get('programador_recordatorios')
+    if tarea:
+        tarea.cancel()
+    for tarea in list(recordatorio_tasks.values()):
+        tarea.cancel()
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -379,6 +526,39 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_submenu_pastillero(query)
     elif opcion == "menu_tramites":
         await mostrar_submenu_tramites(query)
+
+    elif opcion.startswith('tomar_medicamento:'):
+        medicamento_id = int(opcion.split(':', 1)[1])
+        try:
+            medicamento, registrado, motivo = await sync_to_async(registrar_toma_recordatorio)(medicamento_id)
+            tarea = recordatorio_tasks.pop(medicamento_id, None)
+            if tarea:
+                tarea.cancel()
+            if motivo == 'tomado':
+                texto = f'✅ Toma registrada: {medicamento.nombre}. Quedan {medicamento.cantidad_total} pastillas.'
+            elif motivo == 'sin_stock':
+                texto = f'⚠️ {medicamento.nombre} no tiene stock disponible.'
+            else:
+                texto = f'ℹ️ {medicamento.nombre} ya fue procesado hoy.'
+            await query.edit_message_text(texto, reply_markup=obtener_boton_volver())
+        except Pastillero.DoesNotExist:
+            await query.edit_message_text('⚠️ Ese medicamento ya no existe.', reply_markup=obtener_boton_volver())
+        return
+
+    elif opcion.startswith('ignorar_medicamento:'):
+        medicamento_id = int(opcion.split(':', 1)[1])
+        try:
+            medicamento = await sync_to_async(omitir_medicamento_hoy)(medicamento_id)
+            tarea = recordatorio_tasks.pop(medicamento_id, None)
+            if tarea:
+                tarea.cancel()
+            await query.edit_message_text(
+                f'🙈 Entendido. No te avisaré nuevamente por {medicamento.nombre} hoy.',
+                reply_markup=obtener_boton_volver(),
+            )
+        except Pastillero.DoesNotExist:
+            await query.edit_message_text('⚠️ Ese medicamento ya no existe.', reply_markup=obtener_boton_volver())
+        return
 
     # Submenú Stock
     elif opcion == "op_stock_consultar":
@@ -462,7 +642,13 @@ def main():
         print("❌ ERROR: No se encontró TELEGRAM_TOKEN.")
         return
 
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    application = (
+        ApplicationBuilder()
+        .token(TELEGRAM_TOKEN)
+        .post_init(iniciar_recordatorios)
+        .post_shutdown(detener_recordatorios)
+        .build()
+    )
     
     application.add_handler(CommandHandler(["start", "menu"], responder))
     application.add_handler(CallbackQueryHandler(manejar_botones))

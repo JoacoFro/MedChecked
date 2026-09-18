@@ -117,12 +117,18 @@ class Envio(models.Model):
     # medicine_control/models.py
 
 class Pastillero(models.Model):
+    ESTADOS_DIARIOS = [
+        ('pendiente', 'Pendiente'),
+        ('tomado', 'Tomado'),
+        ('omitido', 'Omitido'),
+    ]
+
     nombre = models.CharField(max_length=100)
     fecha_hora = models.DateTimeField(default=timezone.now)
     cantidad = models.IntegerField(default=1, help_text="Cantidad de comprimidos tomados en esta toma")
-    
-    # Campo simple para llevar el total de comprimidos disponibles
     cantidad_total = models.IntegerField(default=0, help_text="Total de pastillas disponibles actualmente")
+    estado_diario = models.CharField(max_length=10, choices=ESTADOS_DIARIOS, default='pendiente')
+    estado_diario_fecha = models.DateField(null=True, blank=True)
 
     class Meta:
         ordering = ['-fecha_hora']
@@ -131,3 +137,17 @@ class Pastillero(models.Model):
 
     def __str__(self):
         return f"{self.nombre} - {self.cantidad} un. ({self.fecha_hora.strftime('%d/%m/%Y %H:%M')})"
+
+
+class TomaPastillero(models.Model):
+    medicamento = models.ForeignKey(Pastillero, on_delete=models.CASCADE, related_name='historial_tomas')
+    cantidad = models.PositiveIntegerField()
+    fecha_hora = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-fecha_hora']
+        verbose_name = "Toma de pastillero"
+        verbose_name_plural = "Tomas de pastillero"
+
+    def __str__(self):
+        return f"{self.medicamento.nombre} - {self.cantidad} un. ({self.fecha_hora.strftime('%d/%m/%Y %H:%M')})"

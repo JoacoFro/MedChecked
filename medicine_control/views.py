@@ -10,7 +10,7 @@ from .telegram_utils import enviar_alerta
 import json
 import requests
 from django.http import JsonResponse
-from .models import Insumo, Envio, Pastillero
+from .models import Insumo, Envio, Pastillero, TomaPastillero
 from django.contrib import messages
 from django.shortcuts import render, redirect
 import os
@@ -348,7 +348,8 @@ def pastillero_view(request):
                     nombre=nombre,
                     cantidad=0,
                     cantidad_total=cantidad_pastillas,
-                    fecha_hora=timezone.now()
+                    fecha_hora=timezone.now(),
+                    estado_diario='pendiente',
                 )
                 messages.success(request, f"Medicamento '{nombre}' agregado con {cantidad_pastillas} unidades.")
             else:
@@ -365,7 +366,15 @@ def pastillero_view(request):
                 medicamento.cantidad_total -= cantidad_real
                 medicamento.cantidad = cantidad_real
                 medicamento.fecha_hora = timezone.now()
+                medicamento.estado_diario = 'tomado'
+                medicamento.estado_diario_fecha = timezone.localdate()
                 medicamento.save()
+                if cantidad_real:
+                    TomaPastillero.objects.create(
+                        medicamento=medicamento,
+                        cantidad=cantidad_real,
+                        fecha_hora=timezone.now(),
+                    )
 
                 messages.success(
                     request, 
@@ -381,7 +390,7 @@ def pastillero_view(request):
 
     # GET: Cargar datos para el renderizado
     medicamentos = Pastillero.objects.all().order_by('nombre')
-    tomas = Pastillero.objects.all().order_by('-fecha_hora')[:20]
+    tomas = TomaPastillero.objects.select_related('medicamento').all()[:20]
     envios = Envio.objects.all()
 
     return render(request, 'medicine_control/pastillero.html', {
