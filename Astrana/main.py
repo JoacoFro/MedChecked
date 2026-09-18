@@ -144,6 +144,8 @@ def interpretar_aclaracion_sondas(texto):
         return 'movimientos_sondas'
     if palabras & {'autonomia', 'dias', 'duracion', 'alcance'}:
         return 'autonomia_sondas'
+    if palabras & {'envio', 'envios', 'tramite', 'tramites', 'pedido', 'pedidos'}:
+        return 'movimientos_tramites'
     return None
 
 
@@ -815,6 +817,12 @@ def detectar_consulta_datos(texto_usuario):
     return None
 
 
+def es_reporte_ambiguo(texto_usuario):
+    """Detecta cualquier solicitud de reporte para pedir el tipo de informe."""
+    palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto_usuario)))
+    return 'reporte' in palabras
+
+
 def clasificar_intencion(texto_usuario):
     """Usa Gemini solo para interpretar la intención; los datos los consulta Django."""
     if gemini_client is None or gemini_classifier_config is None:
@@ -879,9 +887,10 @@ def obtener_boton_volver():
 
 def obtener_opciones_sondas():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('📦 Stock actual', callback_data='aclaracion_sondas:stock')],
-        [InlineKeyboardButton('📥 Ingresos y egresos', callback_data='aclaracion_sondas:movimientos')],
-        [InlineKeyboardButton('📊 Autonomía', callback_data='aclaracion_sondas:autonomia')],
+        [InlineKeyboardButton('📦 Stock de Sondas', callback_data='aclaracion_sondas:stock')],
+        [InlineKeyboardButton('📥 Movimientos de entrada y salida de Sondas', callback_data='aclaracion_sondas:movimientos')],
+        [InlineKeyboardButton('📋 Envíos', callback_data='aclaracion_sondas:envios')],
+        [InlineKeyboardButton('📊 Autonomía actual', callback_data='aclaracion_sondas:autonomia')],
     ])
 
 # --- 6. MANEJADOR DE BOTONES Y ACCIONES ---
@@ -912,11 +921,13 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif opcion_sondas == 'movimientos':
             intencion = 'movimientos_sondas'
             reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
+        elif opcion_sondas == 'envios':
+            intencion = 'movimientos_tramites'
+            reporte = await sync_to_async(consultar_ultimos_tramites)()
         else:
             intencion = 'autonomia_sondas'
             reporte = await sync_to_async(consultar_autonomia_sondas)()
         context.user_data.pop('aclaracion_pendiente', None)
-        await sync_to_async(registrar_aprendizaje)(chat_id, opcion_sondas, intencion, reporte)
         await query.edit_message_text(reporte, reply_markup=obtener_boton_volver())
         return
 
@@ -1000,6 +1011,18 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        if es_reporte_ambiguo(texto_usuario):
+            context.user_data['aclaracion_pendiente'] = 'sondas'
+            await update.message.reply_text(
+                '¿A qué reporte te estás refiriendo?\n\n'
+                '• Stock de Sondas\n'
+                '• Movimientos de entrada y salida de Sondas\n'
+                '• Envíos\n'
+                '• Reporte de la autonomía actual',
+                reply_markup=obtener_opciones_sondas(),
+            )
+            return
+
         comando_memoria = await sync_to_async(procesar_comando_memoria)(
             str(update.effective_chat.id), texto_usuario
         )
@@ -1008,28 +1031,6 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 comando_memoria,
                 reply_markup=obtener_boton_volver(),
             )
-            return
-
-        aclaracion = context.user_data.get('aclaracion_pendiente')
-        if aclaracion == 'sondas':
-            intencion = interpretar_aclaracion_sondas(texto_usuario)
-            if intencion == 'stock_sondas':
-                reporte = await sync_to_async(consultar_stock_sondas)()
-            elif intencion == 'movimientos_sondas':
-                reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
-            elif intencion == 'autonomia_sondas':
-                reporte = await sync_to_async(consultar_autonomia_sondas)()
-            else:
-                await update.message.reply_text(
-                    'Podés responder con stock actual, movimientos o autonomía.',
-                    reply_markup=obtener_opciones_sondas(),
-                )
-                return
-            context.user_data.pop('aclaracion_pendiente', None)
-            await sync_to_async(registrar_aprendizaje)(
-                str(update.effective_chat.id), texto_usuario, intencion, reporte
-            )
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
 
         chat_id = str(update.effective_chat.id)
@@ -1043,10 +1044,23 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if intencion == 'aclarar_sondas':
             context.user_data['aclaracion_pendiente'] = 'sondas'
             await update.message.reply_text(
-                'Claro. ¿A qué te referís con las Sondas?\n\n'
-                '• Stock actual\n'
-                '• Últimos ingresos y egresos\n'
-                '• Autonomía disponible',
+                'Claro. ¿A qué reporte te referís?\n\n'
+                '• Stock de Sondas\n'
+                '• Movimientos de entrada y salida de Sondas\n'
+                '• Envíos\n'
+                '• Reporte de la autonomía actual',
+                reply_markup=obtener_opciones_sondas(),
+            )
+            return
+
+        if es_reporte_ambiguo(texto_usuario):
+            context.user_data['aclaracion_pendiente'] = 'sondas'
+            await update.message.reply_text(
+                '¿A qué reporte te estás refiriendo?\n\n'
+                '• Stock de Sondas\n'
+                '• Movimientos de entrada y salida de Sondas\n'
+                '• Envíos\n'
+                '• Reporte de la autonomía actual',
                 reply_markup=obtener_opciones_sondas(),
             )
             return
