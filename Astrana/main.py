@@ -3,6 +3,7 @@ import sys
 import asyncio
 import threading
 import logging
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -549,6 +550,7 @@ async def detener_recordatorios(application):
 
 gemini_client = None
 gemini_config = None
+gemini_classifier_config = None
 if GEMINI_API_KEY:
     try:
         gemini_client = genai.Client(
@@ -570,6 +572,19 @@ if GEMINI_API_KEY:
                 cerrar_tramite_pedido,
             ],
         )
+        gemini_classifier_config = types.GenerateContentConfig(
+            system_instruction=(
+                'Clasificá el mensaje del usuario en una sola intención. '
+                'Respondé únicamente JSON válido con esta forma: '
+                '{"intent":"movimientos_sondas|movimientos_tramites|otro"}. '
+                'Usá movimientos_sondas para ingresos, egresos, salidas o movimientos '
+                'de sondas. Usá movimientos_tramites para reportes, historial, estado, '
+                'movimientos o información de trámites y envíos. Para cualquier otra '
+                'consulta usá otro.'
+            ),
+            response_mime_type='application/json',
+            temperature=0,
+        )
         logger.info('Gemini quedó inicializado correctamente.')
     except Exception:
         logger.exception('No se pudo inicializar Gemini.')
@@ -577,6 +592,22 @@ else:
     logger.error('GEMINI_API_KEY no está configurada; el chat libre queda deshabilitado.')
 
 historiales = {}
+
+
+def clasificar_intencion(texto_usuario):
+    """Usa Gemini solo para interpretar la intención; los datos los consulta Django."""
+    if gemini_client is None or gemini_classifier_config is None:
+        return 'otro'
+    respuesta = gemini_client.models.generate_content(
+        model='gemini-3.6-flash',
+        contents=texto_usuario,
+        config=gemini_classifier_config,
+    )
+    datos = json.loads(respuesta.text)
+    intencion = datos.get('intent')
+    if intencion in {'movimientos_sondas', 'movimientos_tramites'}:
+        return intencion
+    return 'otro'
 
 # --- 5. MENÚS MULTINIVEL (ÁRBOLES DE NAVEGACIÓN) ---
 
@@ -723,12 +754,22 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        # Esta consulta es determinista y no necesita pasar por el function-calling de Gemini.
+        intencion = 'otro'
+        if gemini_client is not None:
+            try:
+                intencion = await asyncio.wait_for(
+                    asyncio.to_thread(clasificar_intencion, texto_usuario),
+                    timeout=15,
+                )
+            except Exception:
+                logger.exception('No se pudo clasificar la intención; se usa el fallback textual.')
+
+        # Gemini interpreta lenguaje natural; Django consulta los datos reales.
         pide_movimientos_sondas = (
             'sonda' in texto_lower
             and any(palabra in texto_lower for palabra in ('ingreso', 'egreso', 'salida', 'movimiento'))
         )
-        if pide_movimientos_sondas:
+        if intencion == 'movimientos_sondas' or pide_movimientos_sondas:
             reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
@@ -742,7 +783,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'envíos', 'envios', 'cuáles', 'cuales',
             ))
         )
-        if pide_reporte_tramites:
+        if intencion == 'movimientos_tramites' or pide_reporte_tramites:
             reporte = await sync_to_async(consultar_ultimos_tramites)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
