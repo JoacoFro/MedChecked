@@ -85,6 +85,43 @@ def consultar_stock_pastillero():
     except Exception as e:
         return f"Error al consultar el stock del pastillero: {e}"
 
+def consultar_ultimos_movimientos_sondas():
+    """Devuelve los últimos 10 ingresos y egresos registrados para Sondas."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        ingresos = Pedido.objects.filter(
+            insumo__nombre__icontains='sonda'
+        ).select_related('insumo').order_by('-fecha', '-id')[:10]
+        egresos = Salida.objects.filter(
+            insumo__nombre__icontains='sonda'
+        ).select_related('insumo').order_by('-fecha', '-id')[:10]
+
+        reporte = "📥 **Últimos 10 ingresos de Sondas:**\n"
+        if ingresos:
+            for ingreso in ingresos:
+                tipo = ingreso.get_tipo_stock_display()
+                reporte += (
+                    f"• {ingreso.fecha:%d/%m/%Y} | {ingreso.cantidad} un. | "
+                    f"{tipo} | {ingreso.lugar_compra or 'Sin origen informado'}\n"
+                )
+        else:
+            reporte += "No hay ingresos registrados.\n"
+
+        reporte += "\n📤 **Últimos 10 egresos de Sondas:**\n"
+        if egresos:
+            for egreso in egresos:
+                tipo = 'Stock normal' if egreso.tipo_stock == 'stock_normal' else 'Stock de seguridad'
+                fecha = timezone.localtime(egreso.fecha).strftime('%d/%m/%Y %H:%M')
+                reporte += (
+                    f"• {fecha} | {egreso.cantidad} un. | {tipo}\n"
+                )
+        else:
+            reporte += "No hay egresos registrados.\n"
+
+        return reporte
+    except Exception as e:
+        return f"Error al consultar los movimientos de Sondas: {e}"
+
 def consultar_ultimas_tomas():
     """Consulta los últimos registros de toma guardados en Pastillero."""
     try:
@@ -457,7 +494,14 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel(
         model_name='models/gemini-flash-latest', 
-        tools=[consultar_estado_stock, registrar_movimiento, obtener_resumen_pedidos, iniciar_tramite_pedido, cerrar_tramite_pedido]
+        tools=[
+            consultar_estado_stock,
+            consultar_ultimos_movimientos_sondas,
+            registrar_movimiento,
+            obtener_resumen_pedidos,
+            iniciar_tramite_pedido,
+            cerrar_tramite_pedido,
+        ]
     )
 
 historiales = {}
