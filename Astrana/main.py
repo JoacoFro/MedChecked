@@ -371,6 +371,33 @@ def obtener_resumen_pedidos():
     except Exception as e:
         return f"Error en resumen: {e}"
 
+def consultar_ultimos_tramites():
+    """Devuelve los últimos 5 movimientos registrados en Envio."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        tramites = Envio.objects.order_by('-fecha_solicitud', '-id')[:5]
+
+        if not tramites:
+            return "📋 No hay movimientos registrados en el historial de trámites."
+
+        reporte = "📋 **Últimos 5 movimientos de trámites:**\n"
+        for tramite in tramites:
+            cierre = (
+                tramite.fecha_cierre.strftime('%d/%m/%Y')
+                if tramite.fecha_cierre else 'Sin cerrar'
+            )
+            reporte += (
+                f"• **{tramite.get_tipo_display()}** | "
+                f"Estado: {tramite.get_estado_display()} | "
+                f"Cantidad: {tramite.cantidad_pedida} | "
+                f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
+                f"Cierre: {cierre} | "
+                f"Demora: {tramite.demora_real} días\n"
+            )
+        return reporte
+    except Exception as e:
+        return f"Error al consultar el historial de trámites: {e}"
+
 # --- 4. CONFIGURACIÓN DE GEMINI Y BOT ---
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -703,6 +730,20 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         if pide_movimientos_sondas:
             reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
+            return
+
+        pide_reporte_tramites = (
+            any(palabra in texto_lower for palabra in ('tramite', 'trámite', 'tramites', 'trámites'))
+            and any(palabra in texto_lower for palabra in (
+                'reporte', 'últimos', 'ultimos', 'movimiento', 'movimientos',
+                'historial', 'registro', 'registros', 'estado', 'información',
+                'informacion', 'situación', 'situacion', 'envío', 'envio',
+                'envíos', 'envios', 'cuáles', 'cuales',
+            ))
+        )
+        if pide_reporte_tramites:
+            reporte = await sync_to_async(consultar_ultimos_tramites)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
 
