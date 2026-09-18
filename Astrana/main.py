@@ -154,6 +154,14 @@ def detectar_consulta_con_memoria(chat_id, texto_usuario):
     if not palabras_texto:
         return None
 
+    memorias = MemoriaAstrana.objects.filter(
+        chat_id=str(chat_id), categoria='alias', activa=True, confirmada=True
+    ).order_by('-fecha_actualizacion')
+    for memoria in memorias:
+        palabras_frase = set(re.findall(r'\b\w+\b', normalizar_texto(memoria.clave)))
+        if palabras_frase and palabras_frase.issubset(palabras_texto):
+            return memoria.valor
+
     aprendizajes = AprendizajeAstrana.objects.filter(
         chat_id=str(chat_id), confirmado=True
     ).order_by('-fecha')
@@ -169,6 +177,66 @@ def detectar_consulta_con_memoria(chat_id, texto_usuario):
             mejor_puntaje = puntaje
             mejor_intencion = aprendizaje.intencion
     return mejor_intencion
+
+
+def intencion_desde_regla(texto):
+    palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto)))
+    if 'sonda' in palabras or 'sondas' in palabras:
+        if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
+            return 'movimientos_sondas'
+        if palabras & {'autonomia', 'dias', 'duracion'}:
+            return 'autonomia_sondas'
+        if palabras & {'stock', 'cantidad', 'disponible'}:
+            return 'stock_sondas'
+    if palabras & {'tramite', 'tramites', 'envio', 'envios'}:
+        return 'movimientos_tramites'
+    return None
+
+
+def procesar_comando_memoria(chat_id, texto_usuario):
+    """Procesa comandos explícitos de memoria sin depender de un modelo externo."""
+    texto = re.sub(r'[^\w\s]', '', normalizar_texto(texto_usuario)).strip()
+
+    if texto in {'que recordas', 'que recordas de mi', 'que recordas sobre mi'}:
+        memorias = MemoriaAstrana.objects.filter(
+            chat_id=str(chat_id), activa=True, confirmada=True
+        ).order_by('-fecha_actualizacion')[:20]
+        aprendizajes = AprendizajeAstrana.objects.filter(
+            chat_id=str(chat_id), confirmado=True
+        ).order_by('-fecha')[:20]
+        if not memorias and not aprendizajes:
+            return 'Todavía no tengo recuerdos guardados sobre este chat.'
+        partes = ['🧠 Esto es lo que recuerdo:']
+        partes.extend(f'• {memoria.clave}: {memoria.valor}' for memoria in memorias)
+        partes.extend(f'• “{aprendizaje.frase}” → {aprendizaje.intencion}' for aprendizaje in aprendizajes)
+        return '\n'.join(partes)
+
+    patron_guardar = re.search(r'(?:recorda|recuerda) que cuando digo (.+?) quiero (.+)$', texto)
+    if patron_guardar:
+        frase = patron_guardar.group(1).strip(' "\'')
+        significado = patron_guardar.group(2).strip()
+        intencion = intencion_desde_regla(significado)
+        if not intencion:
+            return 'Puedo aprender reglas sobre stock, movimientos, trámites o pastillero. ¿Qué consulta querés asociar?'
+        guardar_memoria(chat_id, 'alias', frase, intencion)
+        registrar_aprendizaje(chat_id, frase, intencion, significado)
+        return f'✅ Lo voy a recordar: cuando digas “{frase}”, entenderé “{significado}”.'
+
+    patron_olvidar = re.search(r'(?:olvida|olvidá|olvidar) (?:que )?(?:cuando digo )?(.+)$', texto)
+    if patron_olvidar:
+        frase = patron_olvidar.group(1).strip(' "\'')
+        memorias = MemoriaAstrana.objects.filter(
+            chat_id=str(chat_id), clave__iexact=frase, activa=True
+        )
+        cantidad = memorias.update(activa=False)
+        AprendizajeAstrana.objects.filter(
+            chat_id=str(chat_id), frase__iexact=frase, confirmado=True
+        ).update(confirmado=False)
+        if cantidad:
+            return f'🗑️ Olvidé la asociación “{frase}”.'
+        return f'No encontré una asociación guardada para “{frase}”.'
+
+    return None
 
 
 def consultar_autonomia_sondas():
@@ -932,6 +1000,16 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        comando_memoria = await sync_to_async(procesar_comando_memoria)(
+            str(update.effective_chat.id), texto_usuario
+        )
+        if comando_memoria:
+            await update.message.reply_text(
+                comando_memoria,
+                reply_markup=obtener_boton_volver(),
+            )
+            return
+
         aclaracion = context.user_data.get('aclaracion_pendiente')
         if aclaracion == 'sondas':
             intencion = interpretar_aclaracion_sondas(texto_usuario)
