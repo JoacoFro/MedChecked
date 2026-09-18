@@ -24,7 +24,8 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
 from medicine_control.models import Insumo, Pedido, Salida, Envio, Pastillero, TomaPastillero
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -519,12 +520,20 @@ async def detener_recordatorios(application):
     for tarea in list(recordatorio_tasks.values()):
         tarea.cancel()
 
-model = None
+gemini_client = None
+gemini_config = None
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
     try:
-        model = genai.GenerativeModel(
-            model_name='models/gemini-flash-latest',
+        gemini_client = genai.Client(
+            api_key=GEMINI_API_KEY,
+            http_options=types.HttpOptions(timeout=30000),
+        )
+        gemini_config = types.GenerateContentConfig(
+            system_instruction=(
+                'Sos Astrana. Te llamás Astrana y ayudás a gestionar el stock real. '
+                'Nunca inventes cantidades: usa las herramientas disponibles. '
+                'Para Sondas usa las herramientas de stock; no mezcles Sondas con Pastillero.'
+            ),
             tools=[
                 consultar_estado_stock,
                 consultar_ultimos_movimientos_sondas,
@@ -532,7 +541,7 @@ if GEMINI_API_KEY:
                 obtener_resumen_pedidos,
                 iniciar_tramite_pedido,
                 cerrar_tramite_pedido,
-            ]
+            ],
         )
         logger.info('Gemini quedó inicializado correctamente.')
     except Exception:
@@ -687,7 +696,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        if model is None:
+        if gemini_client is None:
             await update.message.reply_text(
                 '⚠️ El chat de Astrana no está disponible porque Gemini no se inicializó.'
             )
@@ -696,25 +705,19 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Si es texto libre, crea una conversación independiente por usuario.
         user_id = update.effective_user.id
         if user_id not in historiales:
-            historial_forzado = [
-                {
-                    "role": "user",
-                    "parts": ["Hola. Soy Astrana, gestionás el stock mediante herramientas. Reglas estrictas:\n1. NUNCA calcules stock a mano ni inventes números.\n2. Si te pido descargar CAJAS, usá tipo_stock='stock_normal'.\n3. Si te pido descargar UNIDADES sueltas o de backup, usá tipo_stock='seguridad'.\n4. Para 'Sondas', pasale el nombre 'Sonda' a la función."]
-                },
-                {
-                    "role": "model",
-                    "parts": ["Entendido. Soy Astrana. Me llamo Astrana y usaré las herramientas obligatoriamente para consultar o modificar datos reales."]
-                }
-            ]
-            historiales[user_id] = model.start_chat(
-                history=historial_forzado,
-                enable_automatic_function_calling=True,
+            historiales[user_id] = gemini_client.chats.create(
+                model='gemini-3.6-flash',
+                config=gemini_config,
             )
 
         await sync_to_async(connection.close_if_unusable_or_obsolete)()
         response = await asyncio.wait_for(
-            asyncio.to_thread(historiales[user_id].send_message, texto_usuario),
-            timeout=45,
+            asyncio.to_thread(
+                historiales[user_id].send_message,
+                texto_usuario,
+                config=gemini_config,
+            ),
+            timeout=35,
         )
         
         if response.text:
