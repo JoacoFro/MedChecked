@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import threading
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -34,6 +35,12 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
 
 # --- 2. SERVIDOR DUMMY HTTP PARA RENDER ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -512,19 +519,26 @@ async def detener_recordatorios(application):
     for tarea in list(recordatorio_tasks.values()):
         tarea.cancel()
 
+model = None
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(
-        model_name='models/gemini-flash-latest', 
-        tools=[
-            consultar_estado_stock,
-            consultar_ultimos_movimientos_sondas,
-            registrar_movimiento,
-            obtener_resumen_pedidos,
-            iniciar_tramite_pedido,
-            cerrar_tramite_pedido,
-        ]
-    )
+    try:
+        model = genai.GenerativeModel(
+            model_name='models/gemini-flash-latest',
+            tools=[
+                consultar_estado_stock,
+                consultar_ultimos_movimientos_sondas,
+                registrar_movimiento,
+                obtener_resumen_pedidos,
+                iniciar_tramite_pedido,
+                cerrar_tramite_pedido,
+            ]
+        )
+        logger.info('Gemini quedó inicializado correctamente.')
+    except Exception:
+        logger.exception('No se pudo inicializar Gemini.')
+else:
+    logger.error('GEMINI_API_KEY no está configurada; el chat libre queda deshabilitado.')
 
 historiales = {}
 
@@ -672,34 +686,52 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_menu_principal(update, context)
         return
 
-    # Si es texto libre, consulta a la IA con herramientas
-    user_id = update.effective_user.id
-    
-    if user_id not in historiales and GEMINI_API_KEY:
-        historial_forzado = [
-            {
-                "role": "user", 
-                "parts": ["Hola. Soy Astrana, gestionás el stock mediante herramientas. Reglas strictly:\n1. NUNCA calcules stock a mano ni inventes números.\n2. Si te pido descargar CAJAS, usá tipo_stock='stock_normal'.\n3. Si te pido descargar UNIDADES sueltas o de backup, usá tipo_stock='seguridad'.\n4. Para 'Sondas', pasale el nombre 'Sonda' a la función."]
-            },
-            {
-                "role": "model", 
-                "parts": ["Entendido. Soy Astrana. Usaré las herramientas obligatoriamente. Para cajas usaré tipo_stock='stock_normal' y para unidades de seguridad usaré tipo_stock='seguridad'."]
-            }
-        ]
-        historiales[user_id] = model.start_chat(history=historial_forzado, enable_automatic_function_calling=True)
-
     try:
+        if model is None:
+            await update.message.reply_text(
+                '⚠️ El chat de Astrana no está disponible porque Gemini no se inicializó.'
+            )
+            return
+
+        # Si es texto libre, crea una conversación independiente por usuario.
+        user_id = update.effective_user.id
+        if user_id not in historiales:
+            historial_forzado = [
+                {
+                    "role": "user",
+                    "parts": ["Hola. Soy Astrana, gestionás el stock mediante herramientas. Reglas estrictas:\n1. NUNCA calcules stock a mano ni inventes números.\n2. Si te pido descargar CAJAS, usá tipo_stock='stock_normal'.\n3. Si te pido descargar UNIDADES sueltas o de backup, usá tipo_stock='seguridad'.\n4. Para 'Sondas', pasale el nombre 'Sonda' a la función."]
+                },
+                {
+                    "role": "model",
+                    "parts": ["Entendido. Soy Astrana. Me llamo Astrana y usaré las herramientas obligatoriamente para consultar o modificar datos reales."]
+                }
+            ]
+            historiales[user_id] = model.start_chat(
+                history=historial_forzado,
+                enable_automatic_function_calling=True,
+            )
+
         await sync_to_async(connection.close_if_unusable_or_obsolete)()
-        response = await asyncio.to_thread(historiales[user_id].send_message, texto_usuario)
+        response = await asyncio.wait_for(
+            asyncio.to_thread(historiales[user_id].send_message, texto_usuario),
+            timeout=45,
+        )
         
         if response.text:
             await update.message.reply_text(response.text, reply_markup=obtener_boton_volver())
         else:
             await update.message.reply_text("✅ Movimiento procesado en la base de datos.", reply_markup=obtener_boton_volver())
             
-    except Exception as e:
-        print(f"Error en respuesta IA: {e}")
+    except asyncio.TimeoutError:
+        logger.error('Gemini tardó más de 45 segundos en responder.')
+        await update.message.reply_text('⏳ Gemini está tardando demasiado. Probá de nuevo en unos segundos.')
+    except Exception:
+        logger.exception('Error en respuesta IA.')
         await update.message.reply_text("⚠️ Hubo un problema al procesar el mensaje. Probá diciendo 'Hola Astrana'.", reply_markup=obtener_boton_volver())
+
+
+async def manejar_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error('Error no controlado de Telegram: %s', context.error, exc_info=context.error)
 
 # --- 8. PUNTO DE ENTRADA ---
 
@@ -719,6 +751,7 @@ def main():
     application.add_handler(CommandHandler(["start", "menu"], responder))
     application.add_handler(CallbackQueryHandler(manejar_botones))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), responder))
+    application.add_error_handler(manejar_error)
     
     print("🚀 Astrana IA (Híbrido Menú Árbol + Herramientas) desplegando...")
     application.run_polling(drop_pending_updates=True)
