@@ -151,3 +151,46 @@ class TomaPastillero(models.Model):
 
     def __str__(self):
         return f"{self.medicamento.nombre} - {self.cantidad} un. ({self.fecha_hora.strftime('%d/%m/%Y %H:%M')})"
+
+
+class MemoriaAstrana(models.Model):
+    CATEGORIAS = [
+        ('preferencia', 'Preferencia'),
+        ('contexto', 'Contexto'),
+        ('alias', 'Alias'),
+    ]
+
+    chat_id = models.CharField(max_length=100, default='principal')
+    categoria = models.CharField(max_length=20, choices=CATEGORIAS)
+    clave = models.CharField(max_length=100)
+    valor = models.TextField()
+    confirmada = models.BooleanField(default=False)
+    activa = models.BooleanField(default=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['chat_id', 'categoria', 'clave'],
+                name='memoria_astrana_chat_categoria_clave_unica',
+            ),
+        ]
+        ordering = ['-fecha_actualizacion']
+
+    def __str__(self):
+        return f"{self.chat_id}: {self.clave} = {self.valor}"
+
+
+class AprendizajeAstrana(models.Model):
+    chat_id = models.CharField(max_length=100, default='principal')
+    frase = models.TextField()
+    intencion = models.CharField(max_length=100)
+    respuesta = models.TextField(blank=True)
+    confirmado = models.BooleanField(default=False)
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-fecha']
+
+    def __str__(self):
+        return f"{self.frase} -> {self.intencion}"

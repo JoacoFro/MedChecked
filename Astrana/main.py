@@ -26,7 +26,16 @@ load_dotenv(BASE_DIR / ".env")
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
 
-from medicine_control.models import Insumo, Pedido, Salida, Envio, Pastillero, TomaPastillero
+from medicine_control.models import (
+    Insumo,
+    Pedido,
+    Salida,
+    Envio,
+    Pastillero,
+    TomaPastillero,
+    MemoriaAstrana,
+    AprendizajeAstrana,
+)
 from google import genai
 from google.genai import types
 
@@ -80,6 +89,77 @@ def consultar_estado_stock():
         return reporte
     except Exception as e:
         return f"Error al consultar stock: {e}"
+
+
+def consultar_stock_sondas():
+    """Devuelve solo el stock actual de Sondas."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        insumos = Insumo.objects.filter(nombre__icontains='sonda')
+        if not insumos.exists():
+            return 'No hay Sondas registradas.'
+        return '\n'.join(
+            f'📦 {insumo.nombre}: {insumo.total_unidades_reales} unidades '
+            f'({insumo.stock_actual_cajas} cajas y {insumo.backup_unidades} de seguridad).'
+            for insumo in insumos
+        )
+    except Exception as error:
+        return f'Error al consultar el stock de Sondas: {error}'
+
+
+def obtener_memoria(chat_id):
+    return {
+        memoria.clave: memoria.valor
+        for memoria in MemoriaAstrana.objects.filter(
+            chat_id=str(chat_id), activa=True, confirmada=True
+        )
+    }
+
+
+def guardar_memoria(chat_id, categoria, clave, valor):
+    memoria, _ = MemoriaAstrana.objects.update_or_create(
+        chat_id=str(chat_id),
+        categoria=categoria,
+        clave=clave,
+        defaults={'valor': valor, 'confirmada': True, 'activa': True},
+    )
+    return memoria
+
+
+def registrar_aprendizaje(chat_id, frase, intencion, respuesta=''):
+    return AprendizajeAstrana.objects.create(
+        chat_id=str(chat_id),
+        frase=frase,
+        intencion=intencion,
+        respuesta=respuesta,
+        confirmado=True,
+    )
+
+
+def interpretar_aclaracion_sondas(texto):
+    palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto)))
+    if palabras & {'stock', 'disponible', 'cantidad'}:
+        return 'stock_sondas'
+    if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
+        return 'movimientos_sondas'
+    if palabras & {'autonomia', 'dias', 'duracion', 'alcance'}:
+        return 'autonomia_sondas'
+    return None
+
+
+def consultar_autonomia_sondas():
+    """Devuelve la autonomía calculada para los insumos de Sondas."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        insumos = Insumo.objects.filter(nombre__icontains='sonda')
+        if not insumos.exists():
+            return 'No hay Sondas registradas.'
+        return '\n'.join(
+            f'📊 {insumo.nombre}: {insumo.autonomia_smart} días de autonomía.'
+            for insumo in insumos
+        )
+    except Exception as error:
+        return f'Error al consultar la autonomía de Sondas: {error}'
 
 def consultar_stock_pastillero():
     """Consulta el stock de medicamentos guardado en la tabla Pastillero."""
@@ -617,6 +697,12 @@ def detectar_consulta_datos(texto_usuario):
     if habla_de_sondas and habla_de_movimientos:
         return 'movimientos_sondas'
 
+    if habla_de_sondas and bool(palabras & {
+        'reporte', 'informacion', 'información', 'stock', 'estado',
+        'autonomia', 'autonomía', 'situacion', 'situación',
+    }):
+        return 'aclarar_sondas'
+
     habla_de_tramites = bool(palabras & {
         'tramite', 'tramites', 'envio', 'envios',
     })
@@ -698,6 +784,14 @@ async def mostrar_submenu_tramites(query):
 def obtener_boton_volver():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Volver al Menú Principal", callback_data="menu_principal")]])
 
+
+def obtener_opciones_sondas():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('📦 Stock actual', callback_data='aclaracion_sondas:stock')],
+        [InlineKeyboardButton('📥 Ingresos y egresos', callback_data='aclaracion_sondas:movimientos')],
+        [InlineKeyboardButton('📊 Autonomía', callback_data='aclaracion_sondas:autonomia')],
+    ])
+
 # --- 6. MANEJADOR DE BOTONES Y ACCIONES ---
 
 async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -716,6 +810,23 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_submenu_pastillero(query)
     elif opcion == "menu_tramites":
         await mostrar_submenu_tramites(query)
+
+    elif opcion.startswith('aclaracion_sondas:'):
+        opcion_sondas = opcion.split(':', 1)[1]
+        chat_id = str(query.message.chat_id)
+        if opcion_sondas == 'stock':
+            intencion = 'stock_sondas'
+            reporte = await sync_to_async(consultar_stock_sondas)()
+        elif opcion_sondas == 'movimientos':
+            intencion = 'movimientos_sondas'
+            reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
+        else:
+            intencion = 'autonomia_sondas'
+            reporte = await sync_to_async(consultar_autonomia_sondas)()
+        context.user_data.pop('aclaracion_pendiente', None)
+        await sync_to_async(registrar_aprendizaje)(chat_id, opcion_sondas, intencion, reporte)
+        await query.edit_message_text(reporte, reply_markup=obtener_boton_volver())
+        return
 
     elif opcion.startswith('tomar_medicamento:'):
         medicamento_id = int(opcion.split(':', 1)[1])
@@ -797,10 +908,43 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        aclaracion = context.user_data.get('aclaracion_pendiente')
+        if aclaracion == 'sondas':
+            intencion = interpretar_aclaracion_sondas(texto_usuario)
+            if intencion == 'stock_sondas':
+                reporte = await sync_to_async(consultar_stock_sondas)()
+            elif intencion == 'movimientos_sondas':
+                reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
+            elif intencion == 'autonomia_sondas':
+                reporte = await sync_to_async(consultar_autonomia_sondas)()
+            else:
+                await update.message.reply_text(
+                    'Podés responder con stock actual, movimientos o autonomía.',
+                    reply_markup=obtener_opciones_sondas(),
+                )
+                return
+            context.user_data.pop('aclaracion_pendiente', None)
+            await sync_to_async(registrar_aprendizaje)(
+                str(update.effective_chat.id), texto_usuario, intencion, reporte
+            )
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
+            return
+
         intencion = detectar_consulta_datos(texto_usuario)
         if intencion == 'movimientos_sondas':
             reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
+            return
+
+        if intencion == 'aclarar_sondas':
+            context.user_data['aclaracion_pendiente'] = 'sondas'
+            await update.message.reply_text(
+                'Claro. ¿A qué te referís con las Sondas?\n\n'
+                '• Stock actual\n'
+                '• Últimos ingresos y egresos\n'
+                '• Autonomía disponible',
+                reply_markup=obtener_opciones_sondas(),
+            )
             return
 
         if intencion == 'movimientos_tramites':
@@ -842,7 +986,11 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text('⏳ Gemini está tardando demasiado. Probá de nuevo en unos segundos.')
     except Exception:
         logger.exception('Error en respuesta IA.')
-        await update.message.reply_text("⚠️ Hubo un problema al procesar el mensaje. Probá diciendo 'Hola Astrana'.", reply_markup=obtener_boton_volver())
+        await update.message.reply_text(
+            'No terminé de entender la consulta. ¿Podés decirme si querés '
+            'consultar stock, movimientos, trámites o pastillero?',
+            reply_markup=obtener_boton_volver(),
+        )
 
 
 async def manejar_error(update: object, context: ContextTypes.DEFAULT_TYPE):

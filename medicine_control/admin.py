@@ -1,5 +1,15 @@
 from django.contrib import admin
-from .models import Insumo, Pedido, Salida, HistorialMovimiento, Envio, Pastillero, TomaPastillero
+from .models import (
+    Insumo,
+    Pedido,
+    Salida,
+    HistorialMovimiento,
+    Envio,
+    Pastillero,
+    TomaPastillero,
+    MemoriaAstrana,
+    AprendizajeAstrana,
+)
 
 # Registro simple para modelos básicos
 admin.site.register(Pedido)
@@ -36,3 +46,17 @@ class TomaPastilleroAdmin(admin.ModelAdmin):
     list_filter = ('fecha_hora',)
     search_fields = ('medicamento__nombre',)
     ordering = ('-fecha_hora',)
+
+
+@admin.register(MemoriaAstrana)
+class MemoriaAstranaAdmin(admin.ModelAdmin):
+    list_display = ('chat_id', 'categoria', 'clave', 'valor', 'confirmada', 'activa', 'fecha_actualizacion')
+    list_filter = ('categoria', 'confirmada', 'activa')
+    search_fields = ('chat_id', 'clave', 'valor')
+
+
+@admin.register(AprendizajeAstrana)
+class AprendizajeAstranaAdmin(admin.ModelAdmin):
+    list_display = ('chat_id', 'frase', 'intencion', 'confirmado', 'fecha')
+    list_filter = ('intencion', 'confirmado')
+    search_fields = ('chat_id', 'frase', 'respuesta')
