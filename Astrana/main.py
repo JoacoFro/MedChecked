@@ -36,15 +36,15 @@ from medicine_control.models import (
     MemoriaAstrana,
     AprendizajeAstrana,
 )
-from google import genai
-from google.genai import types
-from Astrana.nlp_engine import nlp_engine, NLPResult
+
 try:
     from google import genai
     from google.genai import types
-except ImportError:
+except ImportError:  # pragma: no cover
     genai = None
     types = None
+
+from Astrana.nlp_engine import nlp_engine, NLPResult
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -845,7 +845,6 @@ async def detener_recordatorios(application):
 gemini_client = None
 gemini_config = None
 gemini_classifier_config = None
-if GEMINI_API_KEY:
 if GEMINI_API_KEY and genai is not None:
     try:
         gemini_client = genai.Client(
@@ -1135,28 +1134,19 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- 7. ATENCIÓN DE MENSAJES Y CHAT ---
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
     texto_usuario = update.message.text.strip()
     texto_lower = texto_usuario.lower()
 
-    # Disparador para mostrar el menú
     if "hola astrana" in texto_lower or texto_lower in ["/start", "/menu"]:
         await mostrar_menu_principal(update, context)
         return
 
     try:
-        if es_reporte_ambiguo(texto_usuario):
-            context.user_data['aclaracion_pendiente'] = 'sondas'
-            await update.message.reply_text(
-                '¿A qué reporte te estás refiriendo?\n\n'
-                '• Stock de Sondas\n'
-                '• Movimientos de entrada y salida de Sondas\n'
-                '• Envíos\n'
-                '• Reporte de la autonomía actual',
-                reply_markup=obtener_opciones_sondas(),
-            )
-            return
-
         alta_pendiente = context.user_data.get('alta_medicamento_pendiente')
+
         if alta_pendiente == 'confirmar':
             if respuesta_si(texto_usuario):
                 context.user_data['alta_medicamento_pendiente'] = 'nombre'
@@ -1197,26 +1187,34 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             str(update.effective_chat.id), texto_usuario
         )
         if comando_memoria:
+            await update.message.reply_text(comando_memoria, reply_markup=obtener_boton_volver())
+            return
+
+        if es_reporte_ambiguo(texto_usuario):
+            context.user_data['aclaracion_pendiente'] = 'sondas'
             await update.message.reply_text(
-                comando_memoria,
-                reply_markup=obtener_boton_volver(),
+                '¿A qué reporte te estás refiriendo?\n\n'
+                '• Stock de Sondas\n'
+                '• Movimientos de entrada y salida de Sondas\n'
+                '• Envíos\n'
+                '• Reporte de la autonomía actual',
+                reply_markup=obtener_opciones_sondas(),
             )
             return
 
         chat_id = str(update.effective_chat.id)
         intencion = await sync_to_async(detectar_consulta_con_memoria)(chat_id, texto_usuario)
-        intencion = intencion or detectar_consulta_datos(texto_usuario)
+        if not intencion:
+            intencion = detectar_consulta_datos(texto_usuario)
 
-        # 1. Chequeo de memoria directa (alias y reglas aprendidas del chat)
-        intencion_memoria = await sync_to_async(detectar_consulta_con_memoria)(chat_id, texto_usuario)
-
-        # 2. Análisis NLP local con scikit-learn y rapidfuzz
-        nlp_res = await sync_to_async(nlp_engine.interpretar)(texto_usuario, chat_id=chat_id)
-        intencion = intencion_memoria or nlp_res.intent
-        entidades = nlp_res.entities
-        confianza = nlp_res.confidence
-
-        logger.info("NLP Local: intencion='%s', conf=%.2f, entidades=%s", intencion, confianza, entidades)
+        entidades = {}
+        confianza = 0.0
+        if intencion is None:
+            nlp_res = await sync_to_async(nlp_engine.interpretar)(texto_usuario, chat_id=chat_id)
+            intencion = nlp_res.intent
+            entidades = nlp_res.entities or {}
+            confianza = nlp_res.confidence
+            logger.info("NLP Local: intencion='%s', conf=%.2f, entidades=%s", intencion, confianza, entidades)
 
         if intencion == 'saludo':
             await mostrar_menu_principal(update, context)
@@ -1224,12 +1222,12 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if intencion == 'consultar_stock':
             reporte = await sync_to_async(consultar_estado_stock)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
             return
 
         if intencion == 'consultar_autonomia':
             reporte = await sync_to_async(consultar_autonomia_sondas)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
             return
 
         if intencion == 'movimientos_sondas':
@@ -1246,111 +1244,86 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 '• Envíos\n'
                 '• Reporte de la autonomía actual',
                 reply_markup=obtener_opciones_sondas(),
+            )
+            return
+
         if intencion == 'agregar_stock':
             cantidad = entidades.get('cantidad')
             tipo_stock = entidades.get('tipo_stock', 'stock_normal')
             insumo = entidades.get('insumo')
-            nombre_insumo = insumo.nombre if insumo else "Sondas"
+            nombre_insumo = insumo.nombre if insumo else 'Sondas'
             if not cantidad:
                 await update.message.reply_text(
                     f"❓ ¿Cuántas cajas o unidades de {nombre_insumo} ingresaron? (Ej: 'Ingresaron 2 cajas')",
-                    reply_markup=obtener_boton_volver()
+                    reply_markup=obtener_boton_volver(),
                 )
                 return
             res = await sync_to_async(registrar_movimiento)(
-                nombre_insumo=nombre_insumo, accion="cargar", cantidad=cantidad, tipo_stock=tipo_stock
+                nombre_insumo=nombre_insumo,
+                accion='cargar',
+                cantidad=cantidad,
+                tipo_stock=tipo_stock,
             )
             await update.message.reply_text(res, reply_markup=obtener_boton_volver())
             return
 
-        if es_reporte_ambiguo(texto_usuario):
-            context.user_data['aclaracion_pendiente'] = 'sondas'
-            await update.message.reply_text(
-                '¿A qué reporte te estás refiriendo?\n\n'
-                '• Stock de Sondas\n'
-                '• Movimientos de entrada y salida de Sondas\n'
-                '• Envíos\n'
-                '• Reporte de la autonomía actual',
-                reply_markup=obtener_opciones_sondas(),
         if intencion == 'quitar_stock':
             cantidad = entidades.get('cantidad')
             tipo_stock = entidades.get('tipo_stock', 'stock_normal')
             insumo = entidades.get('insumo')
-            nombre_insumo = insumo.nombre if insumo else "Sondas"
+            nombre_insumo = insumo.nombre if insumo else 'Sondas'
             if not cantidad:
                 await update.message.reply_text(
                     f"❓ ¿Cuántas cajas o unidades de {nombre_insumo} retiraste? (Ej: 'Descontar 1 caja')",
-                    reply_markup=obtener_boton_volver()
+                    reply_markup=obtener_boton_volver(),
                 )
                 return
             res = await sync_to_async(registrar_movimiento)(
-                nombre_insumo=nombre_insumo, accion="descargar", cantidad=cantidad, tipo_stock=tipo_stock
+                nombre_insumo=nombre_insumo,
+                accion='descargar',
+                cantidad=cantidad,
+                tipo_stock=tipo_stock,
             )
             await update.message.reply_text(res, reply_markup=obtener_boton_volver())
             return
 
-        if intencion == 'movimientos_tramites':
+        if intencion == 'consultar_tramites' or intencion == 'movimientos_tramites':
             reporte = await sync_to_async(consultar_ultimos_tramites)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
-        if intencion == 'consultar_tramites':
-            reporte = await sync_to_async(obtener_resumen_pedidos)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
-        if intencion == 'ultimas_tomas_pastillero':
-            reporte = await sync_to_async(consultar_tomas_medicamentos)(
-                texto_usuario, solo_ultimas=True
-            )
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
         if intencion == 'iniciar_tramite':
             tipo_tramite = entidades.get('tipo_tramite', 'os')
             cantidad = entidades.get('cantidad')
             res = await sync_to_async(iniciar_tramite_pedido)(tipo_tramite=tipo_tramite, cantidad=cantidad)
-            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
+            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
             return
 
-        if intencion == 'verificar_toma_medicamento':
-            medicamento = await sync_to_async(medicamento_mencionado)(texto_usuario)
-            if medicamento is None and not consulta_medicamento_generica(texto_usuario):
         if intencion == 'cerrar_tramite':
             tipo_tramite = entidades.get('tipo_tramite', 'os')
             tipo_stock = entidades.get('tipo_stock', 'stock_normal')
             res = await sync_to_async(cerrar_tramite_pedido)(tipo_tramite=tipo_tramite, tipo_stock=tipo_stock)
-            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
+            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
             return
 
-        if intencion == 'pastillero_stock':
-            reporte = await sync_to_async(consultar_stock_pastillero)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
+        if intencion in {'pastillero_stock', 'consultar_tomas'}:
+            reporte = await sync_to_async(consultar_stock_pastillero)() if intencion == 'pastillero_stock' else await sync_to_async(consultar_tomas_medicamentos)(texto_usuario, solo_ultimas=True)
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
             return
 
-        if intencion == 'consultar_tomas':
-            reporte = await sync_to_async(consultar_tomas_medicamentos)(texto_usuario, solo_ultimas=True)
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'consultar_si_tomo':
-            medicamento = entidades.get('medicamento')
-            med_nombre = entidades.get('medicamento_nombre')
-            if medicamento is None and med_nombre and not consulta_medicamento_generica(texto_usuario):
+        if intencion in {'verificar_toma_medicamento', 'consultar_si_tomo'}:
+            medicamento = await sync_to_async(medicamento_mencionado)(texto_usuario)
+            if medicamento is None and not consulta_medicamento_generica(texto_usuario):
                 context.user_data['alta_medicamento_pendiente'] = 'confirmar'
-                context.user_data['medicamento_nuevo_nombre'] = med_nombre
                 await update.message.reply_text(
-                    '❌ No encontré un medicamento registrado con ese nombre.\n'
-                    '¿Te gustaría que lo agreguemos?'
-                    f"❌ No encontré un medicamento llamado '{med_nombre}' en el pastillero.\n¿Te gustaría que lo agreguemos?",
-                    reply_markup=obtener_boton_volver()
+                    '❌ No encontré un medicamento registrado con ese nombre.\n¿Te gustaría que lo agreguemos?',
+                    reply_markup=obtener_boton_volver(),
                 )
                 return
             reporte = await sync_to_async(consultar_si_tome_medicamento)(texto_usuario)
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
-        if gemini_client is None:
-            await update.message.reply_text(
-                '⚠️ El chat de Astrana no está disponible porque Gemini no se inicializó.'
-            )
         if intencion == 'registrar_toma':
             medicamento = entidades.get('medicamento')
             med_nombre = entidades.get('medicamento_nombre')
@@ -1361,12 +1334,12 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['medicamento_nuevo_nombre'] = med_nombre
                 await update.message.reply_text(
                     f"❌ No encontré '{med_nombre}' en el pastillero.\n¿Te gustaría darlo de alta primero?",
-                    reply_markup=obtener_boton_volver()
+                    reply_markup=obtener_boton_volver(),
                 )
                 return
 
             if medicamento:
-                med_obj, reg, motivo = await sync_to_async(registrar_toma_recordatorio)(medicamento.id)
+                med_obj, _, motivo = await sync_to_async(registrar_toma_recordatorio)(medicamento.id)
                 tarea = recordatorio_tasks.pop(medicamento.id, None)
                 if tarea:
                     tarea.cancel()
@@ -1380,15 +1353,9 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             rep = await sync_to_async(consultar_stock_pastillero)()
-            await update.message.reply_text(f"❓ ¿Qué pastilla tomaste?\n\n{rep}", reply_markup=obtener_boton_volver(), parse_mode="Markdown")
+            await update.message.reply_text(f"❓ ¿Qué pastilla tomaste?\n\n{rep}", reply_markup=obtener_boton_volver(), parse_mode='Markdown')
             return
 
-        # Si es texto libre, crea una conversación independiente por usuario.
-        user_id = update.effective_user.id
-        if user_id not in historiales:
-            historiales[user_id] = gemini_client.chats.create(
-                model='gemini-3.6-flash',
-                config=gemini_config,
         if intencion == 'agregar_medicamento':
             med_nombre = entidades.get('medicamento_nombre')
             cantidad = entidades.get('cantidad')
@@ -1396,42 +1363,31 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 med = await sync_to_async(crear_medicamento_pastillero)(med_nombre, cantidad)
                 await update.message.reply_text(
                     f"✅ Agregué {med.nombre} con {med.cantidad_total} pastillas al pastillero.",
-                    reply_markup=obtener_boton_volver()
+                    reply_markup=obtener_boton_volver(),
                 )
                 return
-            elif med_nombre:
+            if med_nombre:
                 context.user_data['medicamento_nuevo_nombre'] = med_nombre
                 context.user_data['alta_medicamento_pendiente'] = 'cantidad'
                 await update.message.reply_text(f"¿Cuántas pastillas de {med_nombre} tenés?")
                 return
-            else:
-                context.user_data['alta_medicamento_pendiente'] = 'nombre'
-                await update.message.reply_text("Perfecto. ¿Cuál es el nombre del medicamento?")
-                return
+            context.user_data['alta_medicamento_pendiente'] = 'nombre'
+            await update.message.reply_text('Perfecto. ¿Cuál es el nombre del medicamento?')
+            return
 
-        # Fallback si Gemini estuviera configurado
-        if gemini_client is not None:
-            user_id = update.effective_user.id
-            if user_id not in historiales:
-                historiales[user_id] = gemini_client.chats.create(
-                    model='gemini-3.6-flash',
-                    config=gemini_config,
-                )
-            await sync_to_async(connection.close_if_unusable_or_obsolete)()
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    historiales[user_id].send_message,
-                    texto_usuario,
-                    config=gemini_config,
-                ),
-                timeout=35,
+        if gemini_client is None:
+            await update.message.reply_text(
+                '⚠️ El chat de Astrana no está disponible porque Gemini no se inicializó.',
+                reply_markup=obtener_boton_volver(),
             )
-            if response.text:
-                await update.message.reply_text(response.text, reply_markup=obtener_boton_volver())
-                return
-            else:
-                await update.message.reply_text("✅ Movimiento procesado.", reply_markup=obtener_boton_volver())
-                return
+            return
+
+        user_id = update.effective_user.id
+        if user_id not in historiales:
+            historiales[user_id] = gemini_client.chats.create(
+                model='gemini-3.6-flash',
+                config=gemini_config,
+            )
 
         await sync_to_async(connection.close_if_unusable_or_obsolete)()
         response = await asyncio.wait_for(
@@ -1441,37 +1397,21 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 config=gemini_config,
             ),
             timeout=35,
-        # Respuesta sugerida amigable si no se entendió la consulta
-        await update.message.reply_text(
-            "No terminé de entender tu consulta. Podés pedirme:\n"
-            "• Stock de sondas o pastillero\n"
-            "• Cargar o descontar stock\n"
-            "• Reporte de autonomía o movimientos\n"
-            "• Trámites de Obra Social o Backup\n"
-            "• Consultar o registrar tomas de pastillas\n\n"
-            "O abrí el menú interactivo:",
-            reply_markup=obtener_boton_volver()
         )
-        
         if response.text:
             await update.message.reply_text(response.text, reply_markup=obtener_boton_volver())
         else:
-            await update.message.reply_text("✅ Movimiento procesado en la base de datos.", reply_markup=obtener_boton_volver())
-            
+            await update.message.reply_text('✅ Movimiento procesado en la base de datos.', reply_markup=obtener_boton_volver())
+        return
+
     except asyncio.TimeoutError:
         logger.error('Gemini tardó más de 45 segundos en responder.')
         await update.message.reply_text('⏳ Gemini está tardando demasiado. Probá de nuevo en unos segundos.')
-    except Exception:
-        logger.exception('Error en respuesta IA.')
-
     except Exception as e:
-        logger.exception("Error al responder mensaje en Astrana: %s", e)
+        logger.exception('Error al responder mensaje en Astrana: %s', e)
         await update.message.reply_text(
-            'No terminé de entender la consulta. ¿Podés decirme si querés '
-            'consultar stock, movimientos, trámites o pastillero?',
+            'No terminé de entender la consulta. ¿Podés decirme si querés consultar stock, movimientos, trámites o pastillero?',
             reply_markup=obtener_boton_volver(),
-            "Ocurrió un error al procesar tu solicitud. ¿Querés intentar desde el menú?",
-            reply_markup=obtener_boton_volver()
         )
 
 

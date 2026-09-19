@@ -96,31 +96,6 @@ def extraer_rango_fechas(texto: str) -> Tuple[Optional[date], Optional[date]]:
         return hoy, hoy
     return None, None
 
-def extraer_nombre_medicamento_candidato(texto: str) -> Optional[str]:
-    """Extrae el nombre probable de un medicamento del texto si aún no está en la base de datos."""
-    norm = normalizar_texto(texto)
-    stopwords = {
-        'el', 'la', 'los', 'las', 'un', 'uno', 'una', 'de', 'del', 'en', 'para',
-        'hoy', 'ayer', 'ahora', 'recien', 'que', 'me', 'ya', 'mi', 'mis',
-        'pastilla', 'pastillas', 'remedio', 'remedios', 'medicamento', 'medicamentos',
-        'comprimido', 'comprimidos', 'toma', 'tomas', 'tome', 'tomaste', 'tomado',
-        'anota', 'registra', 'agregar', 'nuevo', 'nueva', 'stock', 'cuanto', 'cuanta',
-        'sondas', 'sonda', 'cajas', 'caja', 'unidades', 'unidad'
-    }
-    m = re.search(r'(?:pastilla|pastillas|comprimido|comprimidos|remedio|medicamento)\s+(?:de\s+)?([a-zA-Z]{3,})', norm)
-    if m and m.group(1) not in stopwords:
-        return m.group(1).capitalize()
-
-    m2 = re.search(r'(?:tome|tomaste|tomar|anota|registra)\s+(?:\d+\s+)?(?:de\s+)?([a-zA-Z]{3,})', norm)
-    if m2 and m2.group(1) not in stopwords:
-        return m2.group(1).capitalize()
-
-    m3 = re.search(r'(?:stock\s+de)\s+([a-zA-Z]{3,})', norm)
-    if m3 and m3.group(1) not in stopwords:
-        return m3.group(1).capitalize()
-
-    return None
-
 # --- 2. DATASET DE ENTRENAMIENTO DE INTENCIONES ---
 
 INTENT_DATASET: Dict[str, List[str]] = {
@@ -209,14 +184,10 @@ INTENT_DATASET: Dict[str, List[str]] = {
     ],
     'consultar_tramites': [
         'estado de tramites',
-        'como viene el tramite de la obra social',
-        'como esta el tramite de la obra social',
-        'como va el tramite de la obra social',
         'como viene el pedido de la obra social',
         'resumen de tramites',
         'tramites pendientes',
         'como esta el tramite de os',
-        'como viene el tramite de os',
         'que tramites hay en curso',
         'historial de tramites',
         'demora de los envios',
@@ -225,9 +196,6 @@ INTENT_DATASET: Dict[str, List[str]] = {
         'hay tramites abiertos',
         'consultar envios',
         'estado de los pedidos',
-        'que paso con el tramite',
-        'novedades de la obra social',
-        'novedades del tramite',
     ],
     'iniciar_tramite': [
         'iniciar tramite de obra social',
@@ -352,19 +320,27 @@ class NLPEngine:
 
         for intencion, frases in INTENT_DATASET.items():
             for frase in frases:
-                textos.append(normalizar_texto(frase))
-                etiquetas.append(intencion)
+                texto_norm = normalizar_texto(frase)
+                if texto_norm:
+                    textos.append(texto_norm)
+                    etiquetas.append(intencion)
 
-        # Carga opcional de frases aprendidas desde la base de datos
         try:
             from medicine_control.models import AprendizajeAstrana
             aprendizajes = AprendizajeAstrana.objects.filter(confirmado=True)
             for ap in aprendizajes:
-                if ap.intencion and ap.frase:
-                    textos.append(normalizar_texto(ap.frase))
+                if not ap.intencion or not ap.frase:
+                    continue
+                texto_norm = normalizar_texto(ap.frase)
+                if texto_norm:
+                    textos.append(texto_norm)
                     etiquetas.append(ap.intencion)
         except Exception:
             pass
+
+        if not textos:
+            logger.warning("No hay muestras para entrenar el NLP local; se deja el modelo sin datos.")
+            return
 
         self.pipeline = Pipeline([
             ('tfidf', TfidfVectorizer(
@@ -380,6 +356,31 @@ class NLPEngine:
         ])
         self.pipeline.fit(textos, etiquetas)
         logger.info("Motor NLP local entrenado exitosamente con %d muestras.", len(textos))
+
+    def registrar_aprendizaje(self, frase: str, intencion: str, chat_id: str = 'principal', confirmado: bool = True):
+        """Guarda una frase confirmada por el usuario y vuelve a entrenar el modelo."""
+        if not frase or not intencion:
+            return None
+
+        frase_limpia = frase.strip()
+        if not frase_limpia:
+            return None
+
+        try:
+            from medicine_control.models import AprendizajeAstrana
+            aprendizaje, _ = AprendizajeAstrana.objects.get_or_create(
+                chat_id=str(chat_id),
+                frase=frase_limpia,
+                intencion=intencion,
+                defaults={'confirmado': confirmado},
+            )
+            aprendizaje.confirmado = confirmado
+            aprendizaje.save(update_fields=['confirmado'])
+            self.reentrenar()
+            return aprendizaje
+        except Exception:
+            logger.exception("No se pudo registrar el aprendizaje del NLP local.")
+            return None
 
     def reentrenar(self):
         """Permite reentrenar en caliente si se agregan nuevos aprendizajes."""
@@ -505,14 +506,13 @@ class NLPEngine:
 
         medicamento = self.buscar_medicamento_fuzzy(texto_usuario, chat_id=chat_id)
         insumo = self.buscar_insumo_fuzzy(texto_usuario)
-        medicamento_nombre = medicamento.nombre if medicamento else extraer_nombre_medicamento_candidato(texto_usuario)
 
         # Reglas de desambiguación contextual:
         # Si menciona explícitamente un medicamento y un verbo de toma, priorizar registrar_toma o consultar_si_tomo
         norm = normalizar_texto(texto_usuario)
         palabras = set(norm.split())
 
-        if medicamento or medicamento_nombre:
+        if medicamento:
             if palabras & {'tome', 'tomaste', 'tomado', 'tomo', 'tomar', 'anota', 'registra'}:
                 if any(w in norm for w in ['?', 'si tome', 'habre tomado', 'tome el', 'tome la']):
                     intencion = 'consultar_si_tomo'
@@ -532,7 +532,6 @@ class NLPEngine:
             'fecha_inicio': fecha_inicio,
             'fecha_fin': fecha_fin,
             'medicamento': medicamento,
-            'medicamento_nombre': medicamento_nombre,
             'insumo': insumo,
         }
 
