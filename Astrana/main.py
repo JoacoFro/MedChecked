@@ -697,15 +697,15 @@ def obtener_resumen_pedidos():
         return f"Error en resumen: {e}"
 
 def consultar_ultimos_tramites():
-    """Devuelve los últimos 5 movimientos registrados en Envio."""
+    """Devuelve los últimos 10 movimientos registrados en Envio."""
     try:
         connection.close_if_unusable_or_obsolete()
-        tramites = Envio.objects.order_by('-fecha_solicitud', '-id')[:5]
+        tramites = Envio.objects.order_by('-fecha_solicitud', '-id')[:10]
 
         if not tramites:
             return "📋 No hay movimientos registrados en el historial de trámites."
 
-        reporte = "📋 **Últimos 5 movimientos de trámites:**\n"
+        reporte = "📋 **Últimos 10 movimientos de trámites:**\n"
         for tramite in tramites:
             cierre = (
                 tramite.fecha_cierre.strftime('%d/%m/%Y')
@@ -722,6 +722,82 @@ def consultar_ultimos_tramites():
         return reporte
     except Exception as e:
         return f"Error al consultar el historial de trámites: {e}"
+
+
+def consultar_ultimo_tramite_recibido():
+    """Devuelve el envío recibido más recientemente."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        tramite = Envio.objects.filter(
+            estado='recibido', fecha_cierre__isnull=False
+        ).order_by('-fecha_cierre', '-id').first()
+        if not tramite:
+            return 'No hay trámites recibidos registrados.'
+
+        return (
+            '✅ **Último trámite recibido:**\n'
+            f'• **{tramite.get_tipo_display()}** | '
+            f'Cantidad: {tramite.cantidad_pedida} | '
+            f'Solicitado: {tramite.fecha_solicitud:%d/%m/%Y} | '
+            f'Recibido: {tramite.fecha_cierre:%d/%m/%Y} | '
+            f'Demora: {tramite.demora_real} días'
+        )
+    except Exception as e:
+        return f'Error al consultar el último trámite recibido: {e}'
+
+
+def consultar_demora_promedio_tramites():
+    """Calcula la demora promedio de los trámites recibidos."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        tramites = Envio.objects.filter(
+            estado='recibido', fecha_cierre__isnull=False
+        )
+        demoras = [tramite.demora_real for tramite in tramites]
+        if not demoras:
+            return 'No hay trámites recibidos suficientes para calcular una demora promedio.'
+
+        promedio = sum(demoras) / len(demoras)
+        return f'⏱ **Demora promedio de trámites recibidos:** {promedio:.1f} días ({len(demoras)} trámites).'
+    except Exception as e:
+        return f'Error al calcular la demora promedio: {e}'
+
+
+def consultar_proxima_fecha_pedido():
+    """Sugiere el próximo pedido 30 días después de la última solicitud."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        ultimo = Envio.objects.order_by('-fecha_solicitud', '-id').first()
+        if not ultimo:
+            return 'No hay solicitudes registradas para sugerir una próxima fecha de pedido.'
+
+        fecha_sugerida = ultimo.fecha_solicitud + timedelta(days=30)
+        return (
+            '📅 **Próxima fecha sugerida para hacer el pedido:** '
+            f'{fecha_sugerida:%d/%m/%Y}\n'
+            f'Basada en la última solicitud del {ultimo.fecha_solicitud:%d/%m/%Y} '
+            'más 30 días.'
+        )
+    except Exception as e:
+        return f'Error al calcular la próxima fecha de pedido: {e}'
+
+
+def detalle_consulta_tramites(texto_usuario):
+    """Identifica el tipo de consulta solicitada sobre trámites y envíos."""
+    palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto_usuario)))
+    if palabras & {'recibido', 'recibida', 'recibidos', 'recibidas'} and palabras & {
+        'ultimo', 'ultima', 'ultimos', 'ultimas', 'reciente', 'recientes'
+    }:
+        return 'ultimo_recibido'
+    if palabras & {'promedio', 'promedios', 'demora', 'demoras', 'tarda', 'tardan'}:
+        return 'demora_promedio'
+    if palabras & {'proximo', 'proxima', 'proximos', 'proximas', 'siguiente'} and palabras & {
+        'pedido', 'pedidos', 'tramite', 'tramites', 'envio', 'envios', 'fecha'
+    }:
+        return 'proxima_fecha'
+    if palabras & {'movimiento', 'movimientos', 'historial', 'resumen'}:
+        return 'ultimos_movimientos'
+    return 'estado'
 
 # --- 4. CONFIGURACIÓN DE GEMINI Y BOT ---
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
@@ -960,14 +1036,16 @@ def detectar_consulta_datos(texto_usuario):
         return 'verificar_toma_medicamento'
 
     habla_de_tramites = bool(palabras & {
-        'tramite', 'tramites', 'envio', 'envios',
+        'tramite', 'tramites', 'envio', 'envios', 'pedido', 'pedidos',
     })
     consulta_informacion = bool(palabras & {
         'reporte', 'ultimo', 'ultimos', 'movimiento', 'movimientos',
         'historial', 'registro', 'registros', 'estado', 'informacion',
         'situacion', 'cual', 'cuales', 'abierto', 'abiertos',
         'pendiente', 'pendientes', 'cerrado', 'cerrados', 'hay', 'tengo',
-        'paso', 'pasaron', 'sucedio', 'sucede',
+        'paso', 'pasaron', 'sucedio', 'sucede', 'recibido', 'recibida',
+        'recibidos', 'recibidas', 'demora', 'demoras', 'promedio',
+        'proximo', 'proxima', 'siguiente', 'fecha',
     })
     accion_operativa = bool(palabras & {
         'iniciar', 'inicia', 'cerrar', 'cierra', 'crear',
@@ -1337,7 +1415,15 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if intencion == 'consultar_tramites' or intencion == 'movimientos_tramites':
-            reporte = await sync_to_async(consultar_ultimos_tramites)()
+            detalle = detalle_consulta_tramites(texto_usuario)
+            consultas_tramites = {
+                'estado': obtener_resumen_pedidos,
+                'ultimo_recibido': consultar_ultimo_tramite_recibido,
+                'demora_promedio': consultar_demora_promedio_tramites,
+                'proxima_fecha': consultar_proxima_fecha_pedido,
+                'ultimos_movimientos': consultar_ultimos_tramites,
+            }
+            reporte = await sync_to_async(consultas_tramites[detalle])()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
 
