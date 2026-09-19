@@ -776,7 +776,7 @@ def consultar_proxima_fecha_pedido():
             '📅 Joaco la próxima fecha sugerida para hacer el pedido es: '
             f'{fecha_sugerida:%d/%m/%Y}\n'
             f'Tomando como base el ultimo pedido y calculando un promedio de 30 dias aprox {ultimo.fecha_solicitud:%d/%m/%Y} '
-            f
+            
         )
     except Exception as e:
         return f'Error al calcular la próxima fecha de pedido: {e}'
