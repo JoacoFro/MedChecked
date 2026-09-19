@@ -277,8 +277,8 @@ def consultar_stock_pastillero():
     except Exception as e:
         return f"Error al consultar el stock del pastillero: {e}"
 
-def consultar_ultimos_movimientos_sondas():
-    """Devuelve los últimos 10 ingresos y egresos registrados para Sondas."""
+def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False):
+    """Devuelve movimientos recientes de Sondas, filtrados opcionalmente por tipo."""
     try:
         connection.close_if_unusable_or_obsolete()
         ingresos = Pedido.objects.filter(
@@ -287,6 +287,38 @@ def consultar_ultimos_movimientos_sondas():
         egresos = Salida.objects.filter(
             insumo__nombre__icontains='sonda'
         ).select_related('insumo').order_by('-fecha', '-id')[:10]
+
+        if tipo_movimiento == 'ingreso':
+            ingresos = ingresos[:1] if solo_ultimo else ingresos
+            reporte = (
+                "📥 **Último ingreso de Sondas:**\n" if solo_ultimo
+                else "📥 **Últimos 10 ingresos de Sondas:**\n"
+            )
+            if ingresos:
+                for ingreso in ingresos:
+                    tipo = ingreso.get_tipo_stock_display()
+                    reporte += (
+                        f"• {ingreso.fecha:%d/%m/%Y} | {ingreso.cantidad} un. | "
+                        f"{tipo} | {ingreso.lugar_compra or 'Sin origen informado'}\n"
+                    )
+            else:
+                reporte += "No hay ingresos registrados.\n"
+            return reporte
+
+        if tipo_movimiento == 'egreso':
+            egresos = egresos[:1] if solo_ultimo else egresos
+            reporte = (
+                "📤 **Último egreso de Sondas:**\n" if solo_ultimo
+                else "📤 **Últimos 10 egresos de Sondas:**\n"
+            )
+            if egresos:
+                for egreso in egresos:
+                    tipo = 'Stock normal' if egreso.tipo_stock == 'stock_normal' else 'Stock de seguridad'
+                    fecha = timezone.localtime(egreso.fecha).strftime('%d/%m/%Y %H:%M')
+                    reporte += f"• {fecha} | {egreso.cantidad} un. | {tipo}\n"
+            else:
+                reporte += "No hay egresos registrados.\n"
+            return reporte
 
         reporte = "📥 **Últimos 10 ingresos de Sondas:**\n"
         if ingresos:
@@ -304,9 +336,7 @@ def consultar_ultimos_movimientos_sondas():
             for egreso in egresos:
                 tipo = 'Stock normal' if egreso.tipo_stock == 'stock_normal' else 'Stock de seguridad'
                 fecha = timezone.localtime(egreso.fecha).strftime('%d/%m/%Y %H:%M')
-                reporte += (
-                    f"• {fecha} | {egreso.cantidad} un. | {tipo}\n"
-                )
+                reporte += f"• {fecha} | {egreso.cantidad} un. | {tipo}\n"
         else:
             reporte += "No hay egresos registrados.\n"
 
@@ -949,6 +979,21 @@ def detectar_consulta_datos(texto_usuario):
     return None
 
 
+def detalle_movimiento_sondas(texto_usuario):
+    """Determina si se pidió ingreso/egreso y si debe mostrarse solo el último."""
+    palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto_usuario)))
+    palabras_ingreso = palabras & {'ingreso', 'ingresos', 'entrada', 'entradas'}
+    palabras_egreso = palabras & {'egreso', 'egresos', 'salida', 'salidas'}
+    tipo = None
+    if palabras_ingreso and not palabras_egreso:
+        tipo = 'ingreso'
+    elif palabras_egreso and not palabras_ingreso:
+        tipo = 'egreso'
+
+    solo_ultimo = bool(palabras & {'ultimo', 'ultima'})
+    return tipo, solo_ultimo
+
+
 def es_reporte_ambiguo(texto_usuario):
     """Detecta cualquier solicitud de reporte para pedir el tipo de informe."""
     palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto_usuario)))
@@ -1231,7 +1276,11 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if intencion == 'movimientos_sondas':
-            reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
+            tipo_movimiento, solo_ultimo = detalle_movimiento_sondas(texto_usuario)
+            reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)(
+                tipo_movimiento=tipo_movimiento,
+                solo_ultimo=solo_ultimo,
+            )
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
             return
 
