@@ -110,9 +110,9 @@ def procesar_callback(call):
 
     insumo.save()
     
-    msg = f"✅ **Astrana reporta:**\nSe registró {accion} de {cantidad} en stock {tipo}.\n\n"
-    msg += f"📊 **Total Real:** {insumo.total_unidades_reales} unidades.\n"
-    msg += f"🚦 **Estado:** {insumo.semaforo_estado}"
+    msg = f"✅ Astrana reporta:\nSe registró {accion} de {cantidad} en stock {tipo}.\n\n"
+    msg += f"📊 Total Real: {insumo.total_unidades_reales} unidades.\n"
+    msg += f"🚦 Estado: {insumo.semaforo_estado}"
     
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=msg, parse_mode="Markdown")
 

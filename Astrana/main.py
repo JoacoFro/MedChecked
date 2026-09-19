@@ -90,7 +90,7 @@ def consultar_estado_stock():
         for i in insumos:
             aut = i.autonomia_smart
             emoji = "🔴" if aut <= 10 else "🟡" if aut <= 15 else "🟢"
-            reporte += (f"• **{i.nombre}**: {i.total_unidades_reales} un. "
+            reporte += (f"• {i.nombre}: {i.total_unidades_reales} un. "
                         f"({i.stock_actual_cajas} cajas, {i.backup_unidades} backup). "
                         f"Autonomía: {emoji} {aut} días.\n")
         return reporte
@@ -145,9 +145,9 @@ def registrar_aprendizaje(chat_id, frase, intencion, respuesta=''):
 
 def interpretar_aclaracion_sondas(texto):
     palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto)))
-    if palabras & {'stock', 'disponible', 'cantidad'}:
+    if palabras & {'stock', 'disponible', 'cantidad', 'actual', 'existente', 'restante'}:
         return 'stock_sondas'
-    if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
+    if palabras & {'movimiento', 'movimientos', 'ingreso','entrada','entradas', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
         return 'movimientos_sondas'
     if palabras & {'autonomia', 'dias', 'duracion', 'alcance'}:
         return 'autonomia_sondas'
@@ -191,13 +191,13 @@ def detectar_consulta_con_memoria(chat_id, texto_usuario):
 def intencion_desde_regla(texto):
     palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto)))
     if 'sonda' in palabras or 'sondas' in palabras:
-        if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
+        if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos','entrada','entradas', 'egreso', 'egresos', 'salida', 'salidas'}:
             return 'movimientos_sondas'
         if palabras & {'autonomia', 'dias', 'duracion'}:
             return 'autonomia_sondas'
-        if palabras & {'stock', 'cantidad', 'disponible'}:
+        if palabras & {'stock', 'cantidad', 'disponible', 'actual', 'existente', 'restante'}:
             return 'stock_sondas'
-    if palabras & {'tramite', 'tramites', 'envio', 'envios'}:
+    if palabras & {'tramite', 'tramites', 'envio', 'envios', 'pedido', 'pedidos'}:
         return 'movimientos_tramites'
     return None
 
@@ -270,7 +270,7 @@ def consultar_stock_pastillero():
         if not medicamentos.exists():
             return "No hay medicamentos registrados en el pastillero."
 
-        reporte = "💊 **Stock del Pastillero:**\n"
+        reporte = "💊 Stock del Pastillero:\n"
         for medicamento in medicamentos:
             reporte += f"• **{medicamento.nombre}**: {medicamento.cantidad_total} pastillas.\n"
         return reporte
@@ -291,8 +291,8 @@ def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False
         if tipo_movimiento == 'ingreso':
             ingresos = ingresos[:1] if solo_ultimo else ingresos
             reporte = (
-                "📥 **Último ingreso de Sondas:**\n" if solo_ultimo
-                else "📥 **Últimos 10 ingresos de Sondas:**\n"
+                "📥 El ultimo ingreso de Sondas fue:**\n" if solo_ultimo
+                else "📥 Te muestro los ultimos 10 ingresos de Sondas:\n"
             )
             if ingresos:
                 for ingreso in ingresos:
@@ -308,8 +308,8 @@ def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False
         if tipo_movimiento == 'egreso':
             egresos = egresos[:1] if solo_ultimo else egresos
             reporte = (
-                "📤 **Último egreso de Sondas:**\n" if solo_ultimo
-                else "📤 **Últimos 10 egresos de Sondas:**\n"
+                "📤 El ultimo egreso de Sondas fue:**\n" if solo_ultimo
+                else "📤 Te muestro los ultimos 10 egresos de Sondas:\n"
             )
             if egresos:
                 for egreso in egresos:
@@ -320,7 +320,7 @@ def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False
                 reporte += "No hay egresos registrados.\n"
             return reporte
 
-        reporte = "📥 **Últimos 10 ingresos de Sondas:**\n"
+        reporte = "📥 Acá estan los ultimos 10 ingresos de Sondas:\n"
         if ingresos:
             for ingreso in ingresos:
                 tipo = ingreso.get_tipo_stock_display()
@@ -331,7 +331,7 @@ def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False
         else:
             reporte += "No hay ingresos registrados.\n"
 
-        reporte += "\n📤 **Últimos 10 egresos de Sondas:**\n"
+        reporte += "\n📤 Acá estan los ultimos 10 egresos de Sondas:\n"
         if egresos:
             for egreso in egresos:
                 tipo = 'Stock normal' if egreso.tipo_stock == 'stock_normal' else 'Stock de seguridad'
@@ -352,7 +352,7 @@ def consultar_ultimas_tomas():
         if not tomas:
             return "No hay tomas registradas en el pastillero."
 
-        reporte = "🗓 **Últimas tomas:**\n"
+        reporte = "🗓 Últimas tomas:\n"
         for toma in tomas:
             fecha = timezone.localtime(toma.fecha_hora).strftime('%d/%m/%Y %H:%M')
             reporte += f"• **{toma.medicamento.nombre}**: {toma.cantidad} un. ({fecha})\n"
@@ -439,9 +439,9 @@ def consultar_tomas_medicamentos(texto_usuario, solo_ultimas=False):
             periodo = f'el {fecha_inicio:%d/%m/%Y}'
 
         if solo_ultimas:
-            encabezado = f'🗓 **Últimas tomas de {nombre}:**'
+            encabezado = f'🗓 Últimas tomas de {nombre}:'
         else:
-            encabezado = f'💊 **Tomas de {nombre} {periodo}:**'.replace('  ', ' ')
+            encabezado = f'💊 Tomas de {nombre} {periodo}:'.replace('  ', ' ')
         if not tomas:
             return f'No hay tomas registradas de {nombre} {periodo}.'.replace('  ', ' ')
 
@@ -665,11 +665,11 @@ def obtener_resumen_pedidos():
             fecha_cierre__isnull=False,
         ).order_by('-fecha_cierre', '-id')[:10]
 
-        reporte = "📋 **Trámites en curso:**\n"
+        reporte = "📋 Joaco, estos son los trámites en curso :\n"
         if en_curso:
             for tramite in en_curso:
                 reporte += (
-                    f"• **{tramite.get_tipo_display()}** | "
+                    f"• {tramite.get_tipo_display()} | "
                     f"Estado: {tramite.get_estado_display()} | "
                     f"Cantidad: {tramite.cantidad_pedida} | "
                     f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
@@ -678,11 +678,11 @@ def obtener_resumen_pedidos():
         else:
             reporte += "No hay trámites en curso.\n"
 
-        reporte += "\n✅ **Trámites cerrados recientemente:**\n"
+        reporte += "\n✅ Trámites cerrados recientemente:\n"
         if cerrados:
             for tramite in cerrados:
                 reporte += (
-                    f"• **{tramite.get_tipo_display()}** | "
+                    f"• {tramite.get_tipo_display()} | "
                     f"Estado: {tramite.get_estado_display()} | "
                     f"Cantidad: {tramite.cantidad_pedida} | "
                     f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
@@ -705,14 +705,14 @@ def consultar_ultimos_tramites():
         if not tramites:
             return "📋 No hay movimientos registrados en el historial de trámites."
 
-        reporte = "📋 **Últimos 10 movimientos de trámites:**\n"
+        reporte = "📋 Joaco estos son los últimos 10 movimientos que tuvimos de los trámites:**\n"
         for tramite in tramites:
             cierre = (
                 tramite.fecha_cierre.strftime('%d/%m/%Y')
                 if tramite.fecha_cierre else 'Sin cerrar'
             )
             reporte += (
-                f"• **{tramite.get_tipo_display()}** | "
+                f"• {tramite.get_tipo_display()} | "
                 f"Estado: {tramite.get_estado_display()} | "
                 f"Cantidad: {tramite.cantidad_pedida} | "
                 f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
@@ -735,8 +735,8 @@ def consultar_ultimo_tramite_recibido():
             return 'No hay trámites recibidos registrados.'
 
         return (
-            '✅ **Último trámite recibido:**\n'
-            f'• **{tramite.get_tipo_display()}** | '
+            '✅ El ultimo trámite recibido:\n'
+            f'• {tramite.get_tipo_display()} | '
             f'Cantidad: {tramite.cantidad_pedida} | '
             f'Solicitado: {tramite.fecha_solicitud:%d/%m/%Y} | '
             f'Recibido: {tramite.fecha_cierre:%d/%m/%Y} | '
@@ -758,7 +758,7 @@ def consultar_demora_promedio_tramites():
             return 'No hay trámites recibidos suficientes para calcular una demora promedio.'
 
         promedio = sum(demoras) / len(demoras)
-        return f'⏱ **Demora promedio de trámites recibidos:** {promedio:.1f} días ({len(demoras)} trámites).'
+        return f'⏱ Joaco la dmora promedio en los trámites es de:** {promedio:.1f} días ({len(demoras)} trámites).'
     except Exception as e:
         return f'Error al calcular la demora promedio: {e}'
 
@@ -773,10 +773,10 @@ def consultar_proxima_fecha_pedido():
 
         fecha_sugerida = ultimo.fecha_solicitud + timedelta(days=30)
         return (
-            '📅 **Próxima fecha sugerida para hacer el pedido:** '
+            '📅 Joaco la próxima fecha sugerida para hacer el pedido es: '
             f'{fecha_sugerida:%d/%m/%Y}\n'
-            f'Basada en la última solicitud del {ultimo.fecha_solicitud:%d/%m/%Y} '
-            'más 30 días.'
+            f'Tomando como base el ultimo pedido y calculando un promedio de 30 dias aprox {ultimo.fecha_solicitud:%d/%m/%Y} '
+            f
         )
     except Exception as e:
         return f'Error al calcular la próxima fecha de pedido: {e}'
@@ -1116,7 +1116,7 @@ async def mostrar_submenu_stock(query):
         [InlineKeyboardButton("➖ Quitar Stock", callback_data="op_stock_quitar")],
         [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
     ]
-    await query.edit_message_text("📦 **Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_text("📦 Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def mostrar_submenu_pastillero(query):
     keyboard = [
@@ -1124,7 +1124,7 @@ async def mostrar_submenu_pastillero(query):
         [InlineKeyboardButton("🗓 Últimas tomas", callback_data="op_pastillero_tomas")],
         [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
     ]
-    await query.edit_message_text("📦 **Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_text("📦 Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def mostrar_submenu_tramites(query):
     keyboard = [
@@ -1134,7 +1134,7 @@ async def mostrar_submenu_tramites(query):
         [InlineKeyboardButton("✅ Cerrar trámites abiertos", callback_data="op_tramites_cerrar")],
         [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
     ]
-    await query.edit_message_text("📋 **Menú de Trámites:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_text("📋 Menú de Trámites:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 def obtener_boton_volver():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Volver al Menú Principal", callback_data="menu_principal")]])
@@ -1252,7 +1252,7 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Modo Chat Libre
     elif opcion == "op_chat":
-        await query.edit_message_text("💬 **Modo Chat con IA Activado:**\nPodés escribirme cualquier consulta libremente.", reply_markup=obtener_boton_volver())
+        await query.edit_message_text("💬 Modo Chat con IA Astrana esta Activado:\n Joaco podés pedirme o consultar cualquier cosa que necesites.", reply_markup=obtener_boton_volver())
 
 # --- 7. ATENCIÓN DE MENSAJES Y CHAT ---
 
@@ -1263,7 +1263,8 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto_usuario = update.message.text.strip()
     texto_lower = texto_usuario.lower()
 
-    if "hola astrana" in texto_lower or texto_lower in ["/start", "/menu"]:
+    if "Hola Astrana" in texto_lower or texto_lower in ["/start", "/menu"]:
+        await update.message.reply_text('¡Hola Joaco! como va? \n\n En que te puedo ayudar?👇')
         await mostrar_menu_principal(update, context)
         return
 
