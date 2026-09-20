@@ -272,7 +272,7 @@ def consultar_stock_pastillero():
 
         reporte = "💊 Stock del Pastillero:\n"
         for medicamento in medicamentos:
-            reporte += f"• **{medicamento.nombre}**: {medicamento.cantidad_total} pastillas.\n"
+            reporte += f"• {medicamento.nombre}: {medicamento.cantidad_total} pastillas.\n"
         return reporte
     except Exception as e:
         return f"Error al consultar el stock del pastillero: {e}"
@@ -291,15 +291,15 @@ def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False
         if tipo_movimiento == 'ingreso':
             ingresos = ingresos[:1] if solo_ultimo else ingresos
             reporte = (
-                "📥 El ultimo ingreso de Sondas fue:**\n" if solo_ultimo
+                "📥 El ultimo ingreso de Sondas recibido fue el \n" if solo_ultimo
                 else "📥 Te muestro los ultimos 10 ingresos de Sondas:\n"
             )
             if ingresos:
                 for ingreso in ingresos:
                     tipo = ingreso.get_tipo_stock_display()
                     reporte += (
-                        f"• {ingreso.fecha:%d/%m/%Y} | {ingreso.cantidad} un. | "
-                        f"{tipo} | {ingreso.lugar_compra or 'Sin origen informado'}\n"
+                        f"•  {ingreso.fecha:%d/%m/%Y} la cantidad recibida es de {ingreso.cantidad} sondas del "
+                        f"{tipo} a traves de la {ingreso.lugar_compra or 'Sin origen informado'}\n"
                     )
             else:
                 reporte += "No hay ingresos registrados.\n"
@@ -308,7 +308,7 @@ def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False
         if tipo_movimiento == 'egreso':
             egresos = egresos[:1] if solo_ultimo else egresos
             reporte = (
-                "📤 El ultimo egreso de Sondas fue:**\n" if solo_ultimo
+                "📤 El ultimo egreso de Sondas fue:\n" if solo_ultimo
                 else "📤 Te muestro los ultimos 10 egresos de Sondas:\n"
             )
             if egresos:
@@ -448,7 +448,7 @@ def consultar_tomas_medicamentos(texto_usuario, solo_ultimas=False):
         reporte = encabezado + '\n'
         for toma in tomas:
             fecha = timezone.localtime(toma.fecha_hora).strftime('%d/%m/%Y %H:%M')
-            reporte += f'• **{toma.medicamento.nombre}**: {toma.cantidad} un. ({fecha})\n'
+            reporte += f'• {toma.medicamento.nombre}: {toma.cantidad} un. ({fecha})\n'
         return reporte
     except Exception as error:
         return f'Error al consultar las tomas del pastillero: {error}'
@@ -469,7 +469,7 @@ def consultar_si_tome_medicamento(texto_usuario):
     periodo = 'hoy' if fecha_inicio == timezone.localdate() else 'en el período consultado'
     if existe:
         return f'✅ Sí, registraste una toma de {medicamento.nombre} {periodo}.'
-    return f'❌ No encontré una toma de {medicamento.nombre} {periodo}.'
+    return f'❌ No encontré que hayas tomado {medicamento.nombre} {periodo}.'
 
 def registrar_movimiento(nombre_insumo: str, accion: str, cantidad: int, tipo_stock: str):
     """
@@ -705,7 +705,7 @@ def consultar_ultimos_tramites():
         if not tramites:
             return "📋 No hay movimientos registrados en el historial de trámites."
 
-        reporte = "📋 Joaco estos son los últimos 10 movimientos que tuvimos de los trámites:**\n"
+        reporte = "📋 Joaco, estos son los últimos 10 movimientos que tuvimos de los trámites:**\n"
         for tramite in tramites:
             cierre = (
                 tramite.fecha_cierre.strftime('%d/%m/%Y')
@@ -735,12 +735,12 @@ def consultar_ultimo_tramite_recibido():
             return 'No hay trámites recibidos registrados.'
 
         return (
-            '✅ El ultimo trámite recibido:\n'
-            f'• {tramite.get_tipo_display()} | '
-            f'Cantidad: {tramite.cantidad_pedida} | '
-            f'Solicitado: {tramite.fecha_solicitud:%d/%m/%Y} | '
-            f'Recibido: {tramite.fecha_cierre:%d/%m/%Y} | '
-            f'Demora: {tramite.demora_real} días'
+            '✅ El ultimo trámite recibido fue de:\n'
+            f'• {tramite.get_tipo_display()} por una '
+            f'Cantidad de {tramite.cantidad_pedida} sondas '
+            f'que lo solicitamos en la fecha {tramite.fecha_solicitud:%d/%m/%Y} y lo '
+            f'Recibimos en la fecha {tramite.fecha_cierre:%d/%m/%Y} con una '
+            f'Demora de {tramite.demora_real} días'
         )
     except Exception as e:
         return f'Error al consultar el último trámite recibido: {e}'
@@ -758,7 +758,7 @@ def consultar_demora_promedio_tramites():
             return 'No hay trámites recibidos suficientes para calcular una demora promedio.'
 
         promedio = sum(demoras) / len(demoras)
-        return f'⏱ Joaco la dmora promedio en los trámites es de:** {promedio:.1f} días ({len(demoras)} trámites).'
+        return f'⏱ Joaco la dmora promedio en los trámites es de: {promedio:.0f} días).'
     except Exception as e:
         return f'Error al calcular la demora promedio: {e}'
 
