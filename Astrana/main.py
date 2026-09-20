@@ -298,8 +298,8 @@ def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False
                 for ingreso in ingresos:
                     tipo = ingreso.get_tipo_stock_display()
                     reporte += (
-                        f"•  {ingreso.fecha:%d/%m/%Y} la cantidad recibida es de {ingreso.cantidad} sondas del "
-                        f"{tipo} a traves de la {ingreso.lugar_compra or 'Sin origen informado'}\n"
+                        f" {ingreso.fecha:%d/%m/%Y} la cantidad recibida es de {ingreso.cantidad} sondas del "
+                        f"{tipo} a traves de {ingreso.lugar_compra or 'Sin origen informado'}\n"
                     )
             else:
                 reporte += "No hay ingresos registrados.\n"
@@ -682,12 +682,12 @@ def obtener_resumen_pedidos():
         if cerrados:
             for tramite in cerrados:
                 reporte += (
-                    f"• {tramite.get_tipo_display()} | "
+                    f" {tramite.get_tipo_display()} | "
                     f"Estado: {tramite.get_estado_display()} | "
                     f"Cantidad: {tramite.cantidad_pedida} | "
                     f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
-                    f"Cierre: {tramite.fecha_cierre:%d/%m/%Y} | "
-                    f"Demora: {tramite.demora_real} días\n"
+                    f"cierre: {tramite.fecha_cierre:%d/%m/%Y} | "
+                    f"demora: {tramite.demora_real} días\n"
                 )
         else:
             reporte += "No hay trámites cerrados recientemente.\n"
@@ -736,11 +736,11 @@ def consultar_ultimo_tramite_recibido():
 
         return (
             '✅ El ultimo trámite recibido fue de:\n'
-            f'• {tramite.get_tipo_display()} por una '
-            f'Cantidad de {tramite.cantidad_pedida} sondas '
+            f'{tramite.get_tipo_display()} por una '
+            f'cantidad de {tramite.cantidad_pedida} sondas '
             f'que lo solicitamos en la fecha {tramite.fecha_solicitud:%d/%m/%Y} y lo '
-            f'Recibimos en la fecha {tramite.fecha_cierre:%d/%m/%Y} con una '
-            f'Demora de {tramite.demora_real} días'
+            f'recibimos en la fecha {tramite.fecha_cierre:%d/%m/%Y}, la demora fue de'
+            f'{tramite.demora_real} días'
         )
     except Exception as e:
         return f'Error al consultar el último trámite recibido: {e}'
