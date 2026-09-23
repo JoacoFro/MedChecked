@@ -401,4 +401,4 @@ def pastillero_view(request):
     })
 
 def astrana_chat_view(request):
-    return render(request, 'astrana_chat/astrana_chat.html') # O el nombre exacta de tu plantilla
+    return render(request, 'Astrana_chat/astrana_chat.html')
