@@ -16,6 +16,7 @@ from django.shortcuts import render, redirect
 import os
 
 
+
 def home(request):
     insumos = Insumo.objects.all()
     
@@ -398,3 +399,6 @@ def pastillero_view(request):
         'tomas': tomas,
         'envios': envios,
     })
+
+def astrana_chat_view(request):
+    return render(request, 'astrana_chat/astrana_chat.html') # O el nombre exacta de tu plantilla
