@@ -2,44 +2,300 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Astrana IA</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Astrana IA - MedChecked</title>
+    
+    <!-- PWA Metadata -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0f172a">
+    <link rel="apple-touch-icon" href="/static/images/icon-192.png">
+    
+    <!-- Tailwind CSS & FontAwesome -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        * { -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
+        
+        /* Personalización de la barra de desplazamiento */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        
+        .recording-pulse {
+            animation: pulse-red 1.5s infinite;
         }
-        header {
-            text-align: center;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #334155;
-        }
-        .chat-container {
-            flex: 1;
-            margin: 20px 0;
-            overflow-y: auto;
+        @keyframes pulse-red {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
     </style>
 </head>
-<body>
-    <header>
-        <h1>Astrana IA</h1>
+<body class="bg-[#0f172a] text-slate-100 h-screen flex flex-col justify-between overflow-hidden">
+
+    <!-- Header / Barra Superior -->
+    <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 sticky top-0 z-50 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="relative">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg">
+                    <i class="fa-solid fa-robot text-lg"></i>
+                </div>
+                <span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-slate-900"></span>
+            </div>
+            <div>
+                <h1 class="font-bold text-white text-base leading-tight">Astrana IA</h1>
+                <p class="text-xs text-slate-400">Asistente Virtual de MedChecked</p>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-2">
+            <a href="{% url 'pastillero' %}" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-xl border border-slate-700 transition flex items-center gap-1.5">
+                <i class="fa-solid fa-pills text-blue-400"></i>
+                <span>Pastillero</span>
+            </a>
+        </div>
     </header>
-    <main class="chat-container">
-        <p>Interfaz web lista para conectar con Astrana.</p>
+
+    <!-- Área de Conversación / Mensajes -->
+    <main id="chatContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
+        <!-- Mensaje de bienvenida de Astrana -->
+        <div class="flex items-start gap-3">
+            <div class="w-8 h-8 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                <i class="fa-solid fa-robot text-xs"></i>
+            </div>
+            <div class="bg-slate-800 border border-slate-700/60 p-3.5 rounded-2xl rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-md">
+                ¡Hola! 👋 Soy <strong>Astrana</strong>. Puedo ayudarte a gestionar tus medicamentos en MedChecked, registrar tomas o respondemos tus consultas por texto o audio.
+            </div>
+        </div>
     </main>
+
+    <!-- Atajos Rápidos de MedChecked -->
+    <div class="px-4 py-2 bg-slate-900/50 border-t border-slate-800/80 flex items-center gap-2 overflow-x-auto whitespace-nowrap text-xs">
+        <button onclick="sendQuickAction('¿Qué medicamentos tengo disponibles?')" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-full border border-slate-700 transition">
+            💊 Consultar Stock
+        </button>
+        <button onclick="sendQuickAction('Registrar toma de medicamento')" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-full border border-slate-700 transition">
+            ✅ Registrar Toma
+        </button>
+        <button onclick="sendQuickAction('¿Tengo algún trámite o envío pendiente?')" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-full border border-slate-700 transition">
+            📦 Estado de Trámites
+        </button>
+    </div>
+
+    <!-- Barra de Control y Entrada de Mensaje -->
+    <footer class="bg-slate-900 border-t border-slate-800 p-3">
+        
+        <!-- Vista previa de audio grabado (oculta por defecto) -->
+        <div id="audioPreviewContainer" class="hidden mb-3 p-2 bg-slate-800 border border-slate-700 rounded-xl flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-microphone text-rose-500 animate-pulse"></i>
+                <audio id="audioPlayback" controls class="h-8 max-w-[200px]"></audio>
+            </div>
+            <button onclick="cancelAudioRecord()" class="text-slate-400 hover:text-rose-400 p-1">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        </div>
+
+        <form id="chatForm" onsubmit="handleSendMessage(event)" class="flex items-center gap-2">
+            {% csrf_token %}
+            <input type="text" id="userInput" placeholder="Escribe o envía un audio..." 
+                   class="flex-1 bg-slate-800 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition">
+
+            <!-- Botón de Grabación de Audio -->
+            <button type="button" id="micBtn" onclick="toggleAudioRecording()" 
+                    class="w-11 h-11 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl flex items-center justify-center transition shrink-0" title="Grabar Audio">
+                <i class="fa-solid fa-microphone text-base" id="micIcon"></i>
+            </button>
+
+            <!-- Botón de Enviar Texto/Audio -->
+            <button type="submit" id="sendBtn"
+                    class="w-11 h-11 bg-blue-600 hover:bg-blue-500 text-white rounded-xl flex items-center justify-center transition shadow-lg shadow-blue-600/20 shrink-0">
+                <i class="fa-solid fa-paper-plane text-base"></i>
+            </button>
+        </form>
+    </footer>
+
+    <!-- Service Worker y Lógica JS -->
     <script>
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js');
-      }
+        // Registrar Service Worker para PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => console.log('✅ Service Worker de Astrana activo:', reg.scope))
+                .catch(err => console.error('❌ Error SW:', err));
+        }
+
+        const chatContainer = document.getElementById('chatContainer');
+        const userInput = document.getElementById('userInput');
+        const micBtn = document.getElementById('micBtn');
+        const micIcon = document.getElementById('micIcon');
+        const audioPreviewContainer = document.getElementById('audioPreviewContainer');
+        const audioPlayback = document.getElementById('audioPlayback');
+
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let currentAudioBlob = null;
+
+        // --- MANEJO DE GRABACIÓN DE AUDIO ---
+        async function toggleAudioRecording() {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+                    
+                    mediaRecorder.onstop = () => {
+                        currentAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const audioUrl = URL.createObjectURL(currentAudioBlob);
+                        audioPlayback.src = audioUrl;
+                        audioPreviewContainer.classList.remove('hidden');
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    micBtn.classList.add('bg-rose-600', 'text-white', 'recording-pulse');
+                    micBtn.classList.remove('bg-slate-800', 'text-slate-300');
+                    micIcon.className = 'fa-solid fa-square';
+                } catch (err) {
+                    alert('No se pudo acceder al micrófono: ' + err.message);
+                }
+            } else {
+                mediaRecorder.stop();
+                // Detener los tracks del micrófono
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                
+                isRecording = false;
+                micBtn.classList.remove('bg-rose-600', 'text-white', 'recording-pulse');
+                micBtn.classList.add('bg-slate-800', 'text-slate-300');
+                micIcon.className = 'fa-solid fa-microphone';
+            }
+        }
+
+        function cancelAudioRecord() {
+            currentAudioBlob = null;
+            audioPlayback.src = '';
+            audioPreviewContainer.classList.add('hidden');
+        }
+
+        // --- ENVIAR MENSAJES ---
+        function sendQuickAction(text) {
+            userInput.value = text;
+            handleSendMessage(new Event('submit'));
+        }
+
+        async function handleSendMessage(e) {
+            e.preventDefault();
+            const text = userInput.value.trim();
+
+            if (!text && !currentAudioBlob) return;
+
+            // Renderizar mensaje del usuario
+            if (currentAudioBlob) {
+                appendUserAudioMessage(URL.createObjectURL(currentAudioBlob));
+            } else {
+                appendUserTextMessage(text);
+            }
+
+            userInput.value = '';
+            const formData = new FormData();
+            
+            if (currentAudioBlob) {
+                formData.append('audio', currentAudioBlob, 'voice_note.webm');
+                cancelAudioRecord();
+            } else {
+                formData.append('message', text);
+            }
+
+            // Indicador de "Pensando..."
+            const loadingId = appendLoadingIndicator();
+
+            try {
+                // Petición al endpoint del backend
+                const response = await fetch('/api/astrana/chat/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+                removeLoadingIndicator(loadingId);
+
+                if (data.reply) {
+                    appendAstranaMessage(data.reply);
+                } else {
+                    appendAstranaMessage("Recibí tu solicitud correctamente.");
+                }
+            } catch (err) {
+                removeLoadingIndicator(loadingId);
+                appendAstranaMessage("Hubo un error de conexión al consultar a Astrana.");
+            }
+        }
+
+        // --- FUNCIONES DE RENDERIZADO EN CHAT ---
+        function appendUserTextMessage(text) {
+            const html = `
+                <div class="flex items-start justify-end gap-3">
+                    <div class="bg-blue-600 text-white p-3.5 rounded-2xl rounded-tr-none max-w-[85%] text-sm shadow-md">
+                        ${text}
+                    </div>
+                </div>`;
+            chatContainer.insertAdjacentHTML('beforeend', html);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function appendUserAudioMessage(audioUrl) {
+            const html = `
+                <div class="flex items-start justify-end gap-3">
+                    <div class="bg-blue-600 text-white p-2.5 rounded-2xl rounded-tr-none max-w-[85%] shadow-md">
+                        <audio controls src="${audioUrl}" class="h-8 max-w-[200px]"></audio>
+                    </div>
+                </div>`;
+            chatContainer.insertAdjacentHTML('beforeend', html);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function appendAstranaMessage(text) {
+            const html = `
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                        <i class="fa-solid fa-robot text-xs"></i>
+                    </div>
+                    <div class="bg-slate-800 border border-slate-700/60 p-3.5 rounded-2xl rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-md">
+                        ${text}
+                    </div>
+                </div>`;
+            chatContainer.insertAdjacentHTML('beforeend', html);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function appendLoadingIndicator() {
+            const id = 'loading-' + Date.now();
+            const html = `
+                <div id="${id}" class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                        <i class="fa-solid fa-robot text-xs"></i>
+                    </div>
+                    <div class="bg-slate-800 border border-slate-700/60 p-3.5 rounded-2xl rounded-tl-none text-sm text-slate-400 flex items-center gap-2">
+                        <i class="fa-solid fa-circle-notch animate-spin text-blue-400"></i>
+                        <span>Astrana está procesando...</span>
+                    </div>
+                </div>`;
+            chatContainer.insertAdjacentHTML('beforeend', html);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return id;
+        }
+
+        function removeLoadingIndicator(id) {
+            const elem = document.getElementById(id);
+            if (elem) elem.remove();
+        }
     </script>
 </body>
 </html>
