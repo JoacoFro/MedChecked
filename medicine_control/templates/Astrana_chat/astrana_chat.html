@@ -5,30 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Astrana AI - Personal Assistant</title>
 
-    <!-- PWA Metadata -->
+    <!-- PWA Metadata & Favicon -->
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#030712">
-    <link rel="apple-touch-icon" href="/static/images/astrana-icon-192.png">
+    <meta name="theme-color" content="#0d1b2a">
+    <link rel="icon" type="image/jpeg" href="/static/images/astrana-logo.jpg">
+    <link rel="apple-touch-icon" href="/static/images/astrana-logo.jpg">
 
     <!-- Tailwind CSS & FontAwesome -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@300;400;500;600&display=swap');
         
         * { -webkit-tap-highlight-color: transparent; }
-        body { font-family: 'Inter', sans-serif; background-color: #030712; }
-        .font-brand { font-family: 'Space Grotesk', sans-serif; }
+        body { font-family: 'Inter', sans-serif; background-color: #0b132b; }
+        
+        /* Tipografía estilizada para el branding dorado de Astrana */
+        .font-astrana { font-family: 'Cinzel', serif; letter-spacing: 0.12em; }
 
-        /* Efectos de Brillo Neón para Astrana */
-        .glow-purple { box-shadow: 0 0 25px -5px rgba(147, 51, 234, 0.35); }
-        .glow-cyan { box-shadow: 0 0 25px -5px rgba(6, 182, 212, 0.35); }
-        .border-glow { border-color: rgba(168, 85, 247, 0.3); }
+        /* Brillos dorados astronómicos */
+        .glow-gold { box-shadow: 0 0 20px -3px rgba(212, 175, 55, 0.35); }
+        .border-gold { border-color: rgba(212, 175, 55, 0.4); }
 
         ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-track { background: #030712; }
-        ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 10px; }
+        ::-webkit-scrollbar-track { background: #0b132b; }
+        ::-webkit-scrollbar-thumb { background: #1c2541; border-radius: 10px; }
 
         .recording-pulse {
             animation: pulse-rose 1.5s infinite;
@@ -40,27 +42,26 @@
         }
     </style>
 </head>
-<body class="bg-[#030712] text-slate-100 h-screen flex flex-col justify-between overflow-hidden">
+<body class="bg-[#0b132b] text-slate-100 h-screen flex flex-col justify-between overflow-hidden">
 
-    <!-- Header / Barra Superior con Identidad de Astrana -->
-    <header class="bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/80 p-4 sticky top-0 z-50 flex items-center justify-between">
+    <!-- Header / Barra Superior con Logo Oficial de Astrana -->
+    <header class="bg-[#0b132b]/90 backdrop-blur-xl border-b border-amber-500/20 p-3.5 sticky top-0 z-50 flex items-center justify-between">
         <div class="flex items-center gap-3">
             <div class="relative">
-                <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-500 to-cyan-400 p-[2px] glow-purple">
-                    <div class="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-                        <i class="fa-solid fa-sparkles text-transparent bg-clip-text bg-gradient-to-tr from-purple-400 to-cyan-400 text-lg"></i>
-                    </div>
+                <!-- Logo de Astrana encuadrado con marco dorado -->
+                <div class="w-11 h-11 rounded-2xl overflow-hidden border border-amber-400/50 glow-gold bg-[#0b132b] p-0.5">
+                    <img src="/static/images/astrana-logo.jpg" alt="Astrana Logo" class="w-full h-full object-cover rounded-[13px]">
                 </div>
-                <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-slate-950"></span>
+                <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[#0b132b]"></span>
             </div>
             <div>
                 <div class="flex items-center gap-2">
-                    <h1 class="font-brand font-bold text-white text-lg tracking-wide">ASTRANA</h1>
-                    <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800/50 font-semibold">Core AI</span>
+                    <h1 class="font-astrana font-bold text-amber-200 text-lg tracking-widest">ASTRANA</h1>
+                    <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-950/50 text-amber-300 border border-amber-500/30 font-semibold">Core AI</span>
                 </div>
                 <p class="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Módulo Activo: <span id="activeModuleText" class="text-slate-200 font-medium">MedChecked</span>
+                    Módulo Activo: <span id="activeModuleText" class="text-amber-200/90 font-medium">MedChecked</span>
                 </p>
             </div>
         </div>
@@ -68,22 +69,22 @@
         <!-- Selector de Módulo / Proyecto -->
         <div class="flex items-center gap-2">
             <div class="relative group">
-                <button class="bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs px-3.5 py-2 rounded-xl border border-slate-800 transition flex items-center gap-2">
-                    <i class="fa-solid fa-cubes text-purple-400"></i>
+                <button class="bg-[#1c2541] hover:bg-[#25325c] text-slate-200 text-xs px-3.5 py-2 rounded-xl border border-amber-500/20 transition flex items-center gap-2">
+                    <i class="fa-solid fa-cubes text-amber-400"></i>
                     <span class="hidden sm:inline">Proyectos</span>
-                    <i class="fa-solid fa-chevron-down text-[10px] text-slate-500"></i>
+                    <i class="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>
                 </button>
                 <!-- Dropdown de Proyectos Futuros -->
-                <div class="absolute right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl py-2 hidden group-hover:block z-50 backdrop-blur-xl">
-                    <div class="px-3 py-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Módulos Conectados</div>
-                    <a href="javascript:void(0)" onclick="setModule('MedChecked')" class="flex items-center gap-2 px-3 py-2 text-xs text-purple-300 bg-purple-900/20 border-l-2 border-purple-500">
+                <div class="absolute right-0 mt-2 w-48 bg-[#1c2541] border border-amber-500/30 rounded-2xl shadow-2xl py-2 hidden group-hover:block z-50 backdrop-blur-xl">
+                    <div class="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Módulos Conectados</div>
+                    <a href="javascript:void(0)" onclick="setModule('MedChecked')" class="flex items-center gap-2 px-3 py-2 text-xs text-amber-200 bg-amber-500/10 border-l-2 border-amber-400">
                         <i class="fa-solid fa-pills text-blue-400"></i> MedChecked
                     </a>
-                    <a href="javascript:void(0)" onclick="setModule('General')" class="flex items-center gap-2 px-3 py-2 text-xs text-slate-400 hover:bg-slate-800 transition">
-                        <i class="fa-solid fa-brain text-slate-400"></i> Astrana Libre
+                    <a href="javascript:void(0)" onclick="setModule('General')" class="flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-[#25325c] transition">
+                        <i class="fa-solid fa-brain text-amber-400"></i> Astrana Libre
                     </a>
-                    <div class="border-t border-slate-800 my-1"></div>
-                    <span class="block px-3 py-1.5 text-[10px] text-slate-600"> + Próximamente nuevos módulos</span>
+                    <div class="border-t border-slate-700/60 my-1"></div>
+                    <span class="block px-3 py-1.5 text-[10px] text-slate-400"> + Próximamente nuevos módulos</span>
                 </div>
             </div>
         </div>
@@ -91,38 +92,38 @@
 
     <!-- Área de Chat -->
     <main id="chatContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
-        <!-- Saludo inicial de Astrana -->
+        <!-- Saludo inicial de Astrana con Avatar Oficial -->
         <div class="flex items-start gap-3 animate-fade-in">
-            <div class="w-8 h-8 rounded-xl bg-purple-950/60 border border-purple-700/40 flex items-center justify-center text-purple-400 shrink-0 mt-1">
-                <i class="fa-solid fa-sparkles text-xs"></i>
+            <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
+                <img src="/static/images/astrana-logo.jpg" alt="Astrana Avatar" class="w-full h-full object-cover">
             </div>
-            <div class="bg-slate-900/90 border border-slate-800/80 p-4 rounded-2xl rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-2">
-                <p>Hola Joaco. Soy <strong>Astrana</strong> ✦</p>
-                <p class="text-slate-400 text-xs leading-relaxed">
-                    Estoy lista para asistirte. Actualmente tengo sincronizado el módulo <strong class="text-purple-300">MedChecked</strong> para controlar insumos, tomas y trámites, pero podés hacerme cualquier consulta[cite: 1].
+            <div class="bg-[#1c2541]/90 border border-slate-700/70 p-4 rounded-2xl rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-2">
+                <p>Hola Joaco. Soy <strong class="font-astrana text-amber-300">Astrana</strong> ✨</p>
+                <p class="text-slate-300 text-xs leading-relaxed">
+                    Estoy lista para asistirte. Actualmente tengo sincronizado el módulo <strong class="text-amber-200">MedChecked</strong> para controlar insumos, tomas y trámites, pero podés hacerme cualquier consulta[cite: 1].
                 </p>
             </div>
         </div>
     </main>
 
-    <!-- Atajos Contextuales de MedChecked (Se adaptarán según el módulo activo) -->
-    <div id="quickActions" class="px-4 py-2.5 bg-slate-950/60 border-t border-slate-900 flex items-center gap-2 overflow-x-auto whitespace-nowrap text-xs">
-        <button onclick="sendQuickAction('¿Cómo está mi stock de medicamentos en MedChecked?')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 px-3.5 py-1.5 rounded-xl border border-slate-800/80 transition flex items-center gap-1.5">
+    <!-- Atajos Contextuales de MedChecked -->
+    <div id="quickActions" class="px-4 py-2.5 bg-[#0b132b]/80 border-t border-slate-800 flex items-center gap-2 overflow-x-auto whitespace-nowrap text-xs">
+        <button onclick="sendQuickAction('¿Cómo está mi stock de medicamentos en MedChecked?')" class="bg-[#1c2541] hover:bg-[#25325c] text-slate-200 px-3.5 py-1.5 rounded-xl border border-slate-700/60 transition flex items-center gap-1.5">
             <span>💊 Stock MedChecked</span>
         </button>
-        <button onclick="sendQuickAction('Registrar una toma de pastilla')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 px-3.5 py-1.5 rounded-xl border border-slate-800/80 transition flex items-center gap-1.5">
+        <button onclick="sendQuickAction('Registrar una toma de pastilla')" class="bg-[#1c2541] hover:bg-[#25325c] text-slate-200 px-3.5 py-1.5 rounded-xl border border-slate-700/60 transition flex items-center gap-1.5">
             <span>✅ Registrar Toma</span>
         </button>
-        <button onclick="sendQuickAction('¿Hay algún trámite o envío pendiente?')" class="bg-slate-900 hover:bg-slate-800 text-slate-300 px-3.5 py-1.5 rounded-xl border border-slate-800/80 transition flex items-center gap-1.5">
+        <button onclick="sendQuickAction('¿Hay algún trámite o envío pendiente?')" class="bg-[#1c2541] hover:bg-[#25325c] text-slate-200 px-3.5 py-1.5 rounded-xl border border-slate-700/60 transition flex items-center gap-1.5">
             <span>📦 Estado Envíos</span>
         </button>
     </div>
 
     <!-- Barra de Input y Audio -->
-    <footer class="bg-slate-950 border-t border-slate-800/80 p-3.5">
+    <footer class="bg-[#0b132b] border-t border-slate-800 p-3.5">
         
         <!-- Previsualización del audio antes de enviar -->
-        <div id="audioPreviewContainer" class="hidden mb-3 p-3 bg-slate-900 border border-purple-800/40 rounded-2xl flex items-center justify-between glow-purple">
+        <div id="audioPreviewContainer" class="hidden mb-3 p-3 bg-[#1c2541] border border-amber-500/30 rounded-2xl flex items-center justify-between glow-gold">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-400">
                     <i class="fa-solid fa-microphone animate-pulse"></i>
@@ -137,24 +138,23 @@
         <form id="chatForm" onsubmit="handleSendMessage(event)" class="flex items-center gap-2">
             {% csrf_token %}
             <input type="text" id="userInput" placeholder="Hablá con Astrana o envía un mensaje de voz..." 
-                   class="flex-1 bg-slate-900 border border-slate-800/90 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500/80 transition">
+                   class="flex-1 bg-[#1c2541] border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-amber-400/80 transition">
 
             <!-- Botón de Micrófono / Grabador -->
             <button type="button" id="micBtn" onclick="toggleAudioRecording()" 
-                    class="w-12 h-12 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-2xl flex items-center justify-center transition shrink-0" title="Grabar nota de voz">
+                    class="w-12 h-12 bg-[#1c2541] hover:bg-[#25325c] text-slate-200 border border-slate-700/80 rounded-2xl flex items-center justify-center transition shrink-0" title="Grabar nota de voz">
                 <i class="fa-solid fa-microphone text-base" id="micIcon"></i>
             </button>
 
-            <!-- Botón Enviar -->
+            <!-- Botón Enviar con estilo dorado Astrana -->
             <button type="submit" id="sendBtn"
-                    class="w-12 h-12 bg-gradient-to-tr from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-2xl flex items-center justify-center transition shadow-lg glow-purple shrink-0">
+                    class="w-12 h-12 bg-gradient-to-tr from-amber-600 to-amber-400 hover:from-amber-500 hover:to-amber-300 text-slate-950 font-bold rounded-2xl flex items-center justify-center transition shadow-lg glow-gold shrink-0">
                 <i class="fa-solid fa-paper-plane text-base"></i>
             </button>
         </form>
     </footer>
 
     <script>
-        // Registramos el Service Worker para PWA
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js')
                 .then(reg => console.log('✅ Astrana PWA lista:', reg.scope))
@@ -179,7 +179,6 @@
             document.getElementById('activeModuleText').textContent = moduleName;
         }
 
-        // --- MANEJO DE GRABACIÓN DE AUDIO ---
         async function toggleAudioRecording() {
             if (!isRecording) {
                 try {
@@ -198,7 +197,7 @@
                     mediaRecorder.start();
                     isRecording = true;
                     micBtn.classList.add('bg-rose-600', 'text-white', 'recording-pulse');
-                    micBtn.classList.remove('bg-slate-900', 'text-slate-300');
+                    micBtn.classList.remove('bg-[#1c2541]', 'text-slate-200');
                     micIcon.className = 'fa-solid fa-square';
                 } catch (err) {
                     alert('No se pudo acceder al micrófono: ' + err.message);
@@ -208,7 +207,7 @@
                 mediaRecorder.stream.getTracks().forEach(track => track.stop());
                 isRecording = false;
                 micBtn.classList.remove('bg-rose-600', 'text-white', 'recording-pulse');
-                micBtn.classList.add('bg-slate-900', 'text-slate-300');
+                micBtn.classList.add('bg-[#1c2541]', 'text-slate-200');
                 micIcon.className = 'fa-solid fa-microphone';
             }
         }
@@ -275,7 +274,7 @@
         function appendUserTextMessage(text) {
             const html = `
                 <div class="flex items-start justify-end gap-3">
-                    <div class="bg-gradient-to-tr from-purple-600 to-indigo-600 text-white p-3.5 rounded-2xl rounded-tr-none max-w-[85%] text-sm shadow-lg glow-purple">
+                    <div class="bg-gradient-to-tr from-amber-600 to-amber-500 text-slate-950 font-medium p-3.5 rounded-2xl rounded-tr-none max-w-[85%] text-sm shadow-lg glow-gold">
                         ${text}
                     </div>
                 </div>`;
@@ -286,7 +285,7 @@
         function appendUserAudioMessage(audioUrl) {
             const html = `
                 <div class="flex items-start justify-end gap-3">
-                    <div class="bg-gradient-to-tr from-purple-600 to-indigo-600 text-white p-2.5 rounded-2xl rounded-tr-none max-w-[85%] shadow-lg glow-purple">
+                    <div class="bg-gradient-to-tr from-amber-600 to-amber-500 p-2.5 rounded-2xl rounded-tr-none max-w-[85%] shadow-lg glow-gold">
                         <audio controls src="${audioUrl}" class="h-8 max-w-[210px]"></audio>
                     </div>
                 </div>`;
@@ -297,10 +296,10 @@
         function appendAstranaMessage(text) {
             const html = `
                 <div class="flex items-start gap-3">
-                    <div class="w-8 h-8 rounded-xl bg-purple-950/60 border border-purple-700/40 flex items-center justify-center text-purple-400 shrink-0 mt-1">
-                        <i class="fa-solid fa-sparkles text-xs"></i>
+                    <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
+                        <img src="/static/images/astrana-logo.jpg" alt="Astrana Avatar" class="w-full h-full object-cover">
                     </div>
-                    <div class="bg-slate-900/90 border border-slate-800/80 p-3.5 rounded-2xl rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-xl leading-relaxed">
+                    <div class="bg-[#1c2541]/90 border border-slate-700/70 p-3.5 rounded-2xl rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-xl leading-relaxed">
                         ${text}
                     </div>
                 </div>`;
@@ -312,11 +311,11 @@
             const id = 'loading-' + Date.now();
             const html = `
                 <div id="${id}" class="flex items-start gap-3">
-                    <div class="w-8 h-8 rounded-xl bg-purple-950/60 border border-purple-700/40 flex items-center justify-center text-purple-400 shrink-0 mt-1">
-                        <i class="fa-solid fa-sparkles text-xs"></i>
+                    <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
+                        <img src="/static/images/astrana-logo.jpg" alt="Astrana Avatar" class="w-full h-full object-cover animate-pulse">
                     </div>
-                    <div class="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl rounded-tl-none text-xs text-purple-300 flex items-center gap-2">
-                        <i class="fa-solid fa-circle-notch animate-spin text-purple-400"></i>
+                    <div class="bg-[#1c2541] border border-slate-700/70 p-3.5 rounded-2xl rounded-tl-none text-xs text-amber-300 flex items-center gap-2">
+                        <i class="fa-solid fa-circle-notch animate-spin text-amber-400"></i>
                         <span>Astrana está procesando...</span>
                     </div>
                 </div>`;
