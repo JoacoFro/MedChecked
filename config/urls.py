@@ -4,7 +4,7 @@ from django.views.generic.base import RedirectView
 from django.templatetags.static import static
 from medicine_control import views  # Importamos el módulo completo para ser más ordenados
 from medicine_control.views import cron_monitoreo_sistema, pastillero_view
-from medicine_control.views import astrana_chat_view
+from medicine_control.views import astrana_chat_api, astrana_chat_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -25,4 +25,5 @@ urlpatterns = [
 
     # Vista principal donde vivirá la interfaz de la PWA de Astrana
     path('astrana/', astrana_chat_view, name='astrana_pwa'),  # Reemplazaremos views.home por la vista del chat de Astrana más adelante
+    path('api/astrana/chat/', astrana_chat_api, name='astrana_chat_api'),
 ]

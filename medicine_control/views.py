@@ -402,3 +402,140 @@ def pastillero_view(request):
 
 def astrana_chat_view(request):
     return render(request, 'Astrana_chat/astrana_chat.html')
+
+
+def astrana_chat_api(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido.'}, status=405)
+
+    if request.FILES.get('audio'):
+        return JsonResponse({
+            'reply': 'Recibí el audio, pero todavía no está habilitada su transcripción. Por ahora podés escribirme el mensaje.'
+        }, status=501)
+
+    texto_usuario = request.POST.get('message', '').strip()
+    if not texto_usuario:
+        return JsonResponse({'error': 'Escribí un mensaje para Astrana.'}, status=400)
+
+    try:
+        from Astrana import main as astrana
+
+        if not request.session.session_key:
+            request.session.create()
+        chat_id = f'web-{request.session.session_key}'
+
+        comando_memoria = astrana.procesar_comando_memoria(chat_id, texto_usuario)
+        if comando_memoria:
+            return JsonResponse({'reply': comando_memoria})
+
+        intencion = astrana.detectar_consulta_con_memoria(chat_id, texto_usuario)
+        if not intencion:
+            intencion = astrana.detectar_consulta_datos(texto_usuario)
+
+        entidades = {}
+        if intencion is None:
+            resultado_nlp = astrana.nlp_engine.interpretar(texto_usuario, chat_id=chat_id)
+            intencion = resultado_nlp.intent
+            entidades = resultado_nlp.entities or {}
+
+        if intencion == 'saludo':
+            return JsonResponse({'reply': 'Hola, soy Astrana. Puedo ayudarte con stock, sondas, trámites, envíos y pastillero. ¿Qué necesitás?'})
+        if intencion == 'consultar_stock':
+            respuesta = astrana.consultar_estado_stock()
+        elif intencion == 'consultar_autonomia':
+            respuesta = astrana.consultar_autonomia_sondas()
+        elif intencion == 'movimientos_sondas':
+            tipo, solo_ultimo = astrana.detalle_movimiento_sondas(texto_usuario)
+            respuesta = astrana.consultar_ultimos_movimientos_sondas(tipo, solo_ultimo)
+        elif intencion in {'consultar_tramites', 'movimientos_tramites'}:
+            detalle = astrana.detalle_consulta_tramites(texto_usuario)
+            consultas = {
+                'estado': astrana.obtener_resumen_pedidos,
+                'ultimo_recibido': astrana.consultar_ultimo_tramite_recibido,
+                'demora_promedio': astrana.consultar_demora_promedio_tramites,
+                'proxima_fecha': astrana.consultar_proxima_fecha_pedido,
+                'ultimos_movimientos': astrana.consultar_ultimos_tramites,
+            }
+            respuesta = consultas[detalle]()
+        elif intencion in {'pastillero_stock', 'consultar_tomas'}:
+            respuesta = (
+                astrana.consultar_stock_pastillero()
+                if intencion == 'pastillero_stock'
+                else astrana.consultar_tomas_medicamentos(texto_usuario, solo_ultimas=True)
+            )
+        elif intencion in {'verificar_toma_medicamento', 'consultar_si_tomo'}:
+            respuesta = astrana.consultar_si_tome_medicamento(texto_usuario)
+        elif intencion == 'agregar_stock':
+            cantidad = entidades.get('cantidad')
+            insumo = entidades.get('insumo')
+            if not cantidad:
+                respuesta = '¿Cuántas cajas o unidades ingresaron?'
+            else:
+                respuesta = astrana.registrar_movimiento(
+                    nombre_insumo=insumo.nombre if insumo else 'Sondas',
+                    accion='cargar',
+                    cantidad=cantidad,
+                    tipo_stock=entidades.get('tipo_stock', 'stock_normal'),
+                )
+        elif intencion == 'quitar_stock':
+            cantidad = entidades.get('cantidad')
+            insumo = entidades.get('insumo')
+            if not cantidad:
+                respuesta = '¿Cuántas cajas o unidades retiraste?'
+            else:
+                respuesta = astrana.registrar_movimiento(
+                    nombre_insumo=insumo.nombre if insumo else 'Sondas',
+                    accion='descargar',
+                    cantidad=cantidad,
+                    tipo_stock=entidades.get('tipo_stock', 'stock_normal'),
+                )
+        elif intencion == 'iniciar_tramite':
+            respuesta = astrana.iniciar_tramite_pedido(
+                tipo_tramite=entidades.get('tipo_tramite', 'os'),
+                cantidad=entidades.get('cantidad'),
+            )
+        elif intencion == 'cerrar_tramite':
+            respuesta = astrana.cerrar_tramite_pedido(
+                tipo_tramite=entidades.get('tipo_tramite', 'os'),
+                tipo_stock=entidades.get('tipo_stock', 'stock_normal'),
+            )
+        elif intencion == 'registrar_toma':
+            medicamento = entidades.get('medicamento')
+            if medicamento is None:
+                respuesta = 'No pude identificar el medicamento registrado. Decime su nombre para verificarlo.'
+            else:
+                med, _, motivo = astrana.registrar_toma_recordatorio(medicamento.id)
+                if motivo == 'tomado':
+                    respuesta = f'Registré la toma de {med.nombre}. Quedan {med.cantidad_total} pastillas.'
+                elif motivo == 'sin_stock':
+                    respuesta = f'{med.nombre} no tiene stock disponible.'
+                else:
+                    respuesta = f'{med.nombre} ya figuraba como tomado hoy.'
+        elif intencion == 'agregar_medicamento':
+            nombre = entidades.get('medicamento_nombre')
+            cantidad = entidades.get('cantidad')
+            if not nombre or not cantidad:
+                respuesta = 'Decime el nombre del medicamento y cuántas pastillas tenés para agregarlo.'
+            else:
+                medicamento = astrana.crear_medicamento_pastillero(nombre, cantidad)
+                respuesta = f'Agregué {medicamento.nombre} con {medicamento.cantidad_total} pastillas.'
+        elif astrana.gemini_client is not None:
+            clave_historial = f'web-{request.session.session_key}'
+            if clave_historial not in astrana.historiales:
+                astrana.historiales[clave_historial] = astrana.gemini_client.chats.create(
+                    model='gemini-3.6-flash',
+                    config=astrana.gemini_config,
+                )
+            respuesta_gemini = astrana.historiales[clave_historial].send_message(
+                texto_usuario,
+                config=astrana.gemini_config,
+            )
+            respuesta = respuesta_gemini.text or 'No pude generar una respuesta para ese mensaje.'
+        else:
+            respuesta = 'No pude resolver esa consulta con las funciones locales de Astrana. Probá preguntarme por stock, trámites, envíos o pastillero.'
+
+        return JsonResponse({'reply': str(respuesta)})
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Error procesando mensaje desde la PWA de Astrana.')
+        return JsonResponse({'error': 'Astrana tuvo un problema al procesar el mensaje.'}, status=500)
