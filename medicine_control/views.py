@@ -5,7 +5,7 @@ from django.db.models import Sum, Q
 from datetime import datetime, timedelta
 from django.utils.dateparse import parse_date
 from django.utils import timezone
-from django.http import JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from .telegram_utils import enviar_alerta
 import json
 import requests
@@ -402,6 +402,45 @@ def pastillero_view(request):
 
 def astrana_chat_view(request):
     return render(request, 'Astrana_chat/astrana_chat.html')
+
+
+def astrana_icon(request):
+    icon_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        'Astrana', 'static', 'images', 'astrana-logo.jpg',
+    )
+    response = FileResponse(open(icon_path, 'rb'), content_type='image/jpeg')
+    response['Cache-Control'] = 'public, max-age=86400'
+    return response
+
+
+def astrana_pwa_icon(request, size):
+    if size not in {192, 512}:
+        return HttpResponse(status=404)
+    icon_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        'Astrana', 'static', 'images', f'astrana-icon-{size}.png',
+    )
+    response = FileResponse(open(icon_path, 'rb'), content_type='image/png')
+    response['Cache-Control'] = 'public, max-age=86400'
+    return response
+
+
+def astrana_manifest(request):
+    response = FileResponse(
+        open(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Astrana', 'static', 'manifest.json'), 'rb'),
+        content_type='application/manifest+json',
+    )
+    response['Cache-Control'] = 'no-cache'
+    return response
+
+
+def astrana_service_worker(request):
+    with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Astrana', 'static', 'sw.js'), 'rb') as service_worker:
+        response = HttpResponse(service_worker.read(), content_type='application/javascript; charset=utf-8')
+    response['Cache-Control'] = 'no-cache'
+    response['Service-Worker-Allowed'] = '/astrana/'
+    return response
 
 
 def astrana_chat_api(request):

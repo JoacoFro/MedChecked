@@ -5,12 +5,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Astrana AI - Personal Assistant</title>
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
     <!-- PWA Metadata & Favicon -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0d1b2a">
-    <link rel="icon" type="image/jpeg" href="{% static 'images/astrana-logo.jpg' %}">
-    <link rel="apple-touch-icon" href="{% static 'images/astrana-logo.jpg' %}">
+    <link rel="icon" type="image/jpeg" href="{% url 'astrana_icon' %}">
+    <link rel="apple-touch-icon" sizes="640x640" href="{% url 'astrana_icon' %}">
 
     <!-- Tailwind CSS & FontAwesome -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -51,7 +54,7 @@
             <div class="relative">
                 <!-- Logo de Astrana encuadrado con marco dorado -->
                 <div class="w-11 h-11 rounded-2xl overflow-hidden border border-amber-400/50 glow-gold bg-[#0b132b] p-0.5">
-                    <img src="{% static 'images/astrana-logo.jpg' %}" alt="Astrana Logo" class="w-full h-full object-cover rounded-[13px]">
+                    <img src="{% url 'astrana_icon' %}" alt="Astrana Logo" class="w-full h-full object-cover rounded-[13px]">
                 </div>
                 <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[#0b132b]"></span>
             </div>
@@ -73,7 +76,7 @@
         <!-- Saludo inicial de Astrana con Avatar Oficial -->
         <div class="flex items-start gap-3 animate-fade-in">
             <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
-                <img src="{% static 'images/astrana-logo.jpg' %}" alt="Astrana Avatar" class="w-full h-full object-cover">
+                <img src="{% url 'astrana_icon' %}" alt="Astrana Avatar" class="w-full h-full object-cover">
             </div>
             <div class="bg-[#1c2541]/90 border border-slate-700/70 p-4 rounded-2xl rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-2">
                 <p>Hola Joaco. Soy <strong class="font-astrana text-amber-300">Astrana</strong> ✨</p>
@@ -121,7 +124,7 @@
 
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js')
+            navigator.serviceWorker.register('/sw.js', { scope: '/astrana/' })
                 .then(reg => console.log('✅ Astrana PWA lista:', reg.scope))
                 .catch(err => console.error('❌ Error SW:', err));
         }
@@ -132,7 +135,7 @@
         const micIcon = document.getElementById('micIcon');
         const audioPreviewContainer = document.getElementById('audioPreviewContainer');
         const audioPlayback = document.getElementById('audioPlayback');
-        const astranaLogoUrl = "{% static 'images/astrana-logo.jpg' %}";
+        const astranaLogoUrl = "{% url 'astrana_icon' %}";
 
         let mediaRecorder;
         let audioChunks = [];
@@ -269,7 +272,7 @@
             const html = `
                 <div id="${id}" class="flex items-start gap-3">
                     <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
-                        <img src="{% static 'images/astrana-logo.jpg' %}" alt="Astrana Avatar" class="w-full h-full object-cover animate-pulse">
+                        <img src="{% url 'astrana_icon' %}" alt="Astrana Avatar" class="w-full h-full object-cover animate-pulse">
                     </div>
                     <div class="bg-[#1c2541] border border-slate-700/70 p-3.5 rounded-2xl rounded-tl-none text-xs text-amber-300 flex items-center gap-2">
                         <i class="fa-solid fa-circle-notch animate-spin text-amber-400"></i>

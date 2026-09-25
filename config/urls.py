@@ -1,7 +1,5 @@
 from django.contrib import admin
 from django.urls import path
-from django.views.generic.base import RedirectView
-from django.templatetags.static import static
 from medicine_control import views  # Importamos el módulo completo para ser más ordenados
 from medicine_control.views import cron_monitoreo_sistema, pastillero_view
 from medicine_control.views import astrana_chat_api, astrana_chat_view
@@ -18,12 +16,13 @@ urlpatterns = [
     path('api/v1/sistema-monitoreo/', cron_monitoreo_sistema, name='monitoreo_sistema'),
     path('pastillero/', pastillero_view, name='pastillero'),
 
-    # === RUTAS PWA ASTRANA (Archivos en static/) ===
-    # Redirigen las peticiones de la raíz /manifest.json y /sw.js a la carpeta static/
-    path('manifest.json', RedirectView.as_view(url=static('manifest.json'), permanent=True)),
-    path('sw.js', RedirectView.as_view(url=static('sw.js'), permanent=True)),
+    # Recursos PWA servidos en raíz para habilitar el alcance del service worker.
+    path('manifest.json', views.astrana_manifest, name='astrana_manifest'),
+    path('sw.js', views.astrana_service_worker, name='astrana_service_worker'),
 
     # Vista principal donde vivirá la interfaz de la PWA de Astrana
     path('astrana/', astrana_chat_view, name='astrana_pwa'),  # Reemplazaremos views.home por la vista del chat de Astrana más adelante
+    path('astrana/icon.jpg', views.astrana_icon, name='astrana_icon'),
+    path('astrana/icon-<int:size>.png', views.astrana_pwa_icon, name='astrana_pwa_icon'),
     path('api/astrana/chat/', astrana_chat_api, name='astrana_chat_api'),
 ]
