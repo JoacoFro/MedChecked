@@ -614,9 +614,12 @@ def astrana_chat_api(request):
 
 def astrana_vapid_public_key(request):
     """Devuelve la clave pública VAPID para que el navegador se suscriba a Web Push."""
-    from Astrana.webpush_utils import obtener_vapid_public_key
-    clave = obtener_vapid_public_key()
-    return JsonResponse({'publicKey': clave, 'public_key': clave})
+    try:
+        from Astrana.webpush_utils import obtener_vapid_public_key
+        clave = obtener_vapid_public_key()
+        return JsonResponse({'publicKey': clave, 'public_key': clave})
+    except ValueError as error:
+        return JsonResponse({'error': str(error)}, status=503)
 
 
 @csrf_exempt
@@ -670,17 +673,20 @@ def astrana_probar_push_api(request):
             }, status=404)
 
         from Astrana.webpush_utils import enviar_webpush_recordatorio
+        errores = []
         enviados = enviar_webpush_recordatorio(
             titulo="⏰ Alerta de Prueba - Astrana",
             cuerpo="¡Las notificaciones del pastillero están configuradas y funcionando a la perfección!",
             datos={"url": "/astrana/", "tipo": "prueba"},
             chat_id=chat_id,
+            errores=errores,
         )
         if not enviados:
+            detalle = errores[0] if errores else 'No se pudo determinar el motivo del fallo.'
             return JsonResponse({
                 'status': 'error',
                 'enviados': 0,
-                'mensaje': 'La suscripción existe, pero el servicio push no pudo entregar la notificación. Revisá las claves VAPID y los logs del servidor.',
+                'mensaje': f'La suscripción existe, pero falló la entrega: {detalle}',
             }, status=502)
         return JsonResponse({
             'status': 'success',
@@ -688,6 +694,8 @@ def astrana_probar_push_api(request):
             'mensaje': 'Notificación enviada a este dispositivo.',
         })
     except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception('No se pudo enviar push de prueba.')
         return JsonResponse({'error': str(e)}, status=500)
 
 

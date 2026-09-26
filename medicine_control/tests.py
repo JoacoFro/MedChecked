@@ -91,8 +91,19 @@ class AstranaPwaTests(TestCase):
 			secure=True,
 		)
 
-		with patch('Astrana.webpush_utils.enviar_webpush_recordatorio', return_value=0):
+		def fallo_de_entrega(*args, errores=None, **kwargs):
+			errores.append('El proveedor rechazó la autenticación VAPID (HTTP 401/403).')
+			return 0
+
+		with patch('Astrana.webpush_utils.enviar_webpush_recordatorio', side_effect=fallo_de_entrega):
 			response = self.client.post(reverse('astrana_pwa_probar_push'), secure=True)
 
 		self.assertEqual(response.status_code, 502)
-		self.assertIn('claves VAPID', response.json()['mensaje'])
+		self.assertIn('401/403', response.json()['mensaje'])
+
+	def test_vapid_endpoint_returns_only_a_validated_public_key(self):
+		response = self.client.get(reverse('astrana_vapid_public_key'), secure=True)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(response.json()['public_key'])
+		self.assertEqual(response.json()['public_key'], response.json()['publicKey'])

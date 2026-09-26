@@ -325,6 +325,15 @@
             return outputArray;
         }
 
+        function uint8ArrayToUrlBase64(bytes) {
+            let binary = '';
+            for (const byte of bytes) binary += String.fromCharCode(byte);
+            return window.btoa(binary)
+                .split('+').join('-')
+                .split('/').join('_')
+                .replace(/=+$/, '');
+        }
+
         async function inicializarPushNotifications(reg) {
             try {
                 if (!('PushManager' in window)) return;
@@ -404,16 +413,27 @@
         async function sincronizarSuscripcion(reg) {
             try {
                 pushSyncError = '';
-                let sub = await reg.pushManager.getSubscription();
-                if (!sub) {
-                    const res = await fetch('/api/astrana/pwa/vapid-key/');
-                    if (!res.ok) throw new Error(`No se pudo obtener la clave VAPID (${res.status}).`);
-                    const data = await res.json();
-                    const claveVapid = data.public_key || data.publicKey;
-                    if (!claveVapid) {
-                        throw new Error('No se recibió clave VAPID pública.');
-                    }
+                const keyResponse = await fetch('/api/astrana/pwa/vapid-key/');
+                const keyData = await keyResponse.json();
+                if (!keyResponse.ok) {
+                    throw new Error(keyData.error || `No se pudo validar VAPID (${keyResponse.status}).`);
+                }
+                const claveVapid = keyData.public_key || keyData.publicKey;
+                if (!claveVapid) throw new Error('El servidor no devolvió la clave pública VAPID.');
 
+                let sub = await reg.pushManager.getSubscription();
+                if (sub?.options?.applicationServerKey) {
+                    const claveAnterior = uint8ArrayToUrlBase64(
+                        new Uint8Array(sub.options.applicationServerKey)
+                    );
+                    const claveActual = claveVapid.replace(/=+$/g, '');
+                    if (claveAnterior !== claveActual) {
+                        await sub.unsubscribe();
+                        sub = null;
+                    }
+                }
+
+                if (!sub) {
                     const convertedVapidKey = urlBase64ToUint8Array(claveVapid);
                     sub = await reg.pushManager.subscribe({
                         userVisibleOnly: true,
