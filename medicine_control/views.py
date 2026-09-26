@@ -479,7 +479,7 @@ def astrana_chat_api(request):
             entidades = resultado_nlp.entities or {}
 
         if intencion == 'saludo':
-            return JsonResponse({'reply': 'Hola, soy Astrana. Puedo ayudarte con stock, sondas, trámites, envíos y pastillero. ¿Qué necesitás?'})
+            return JsonResponse({'reply': 'Hola Joaco!, soy Astrana. Puedo ayudarte con stock, sondas, trámites, envíos y pastillero. ¿Qué necesitás?'})
         if intencion == 'consultar_stock':
             respuesta = astrana.consultar_estado_stock()
         elif intencion == 'consultar_autonomia':

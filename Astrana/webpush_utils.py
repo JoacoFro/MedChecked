@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import hashlib
 from typing import Dict, Any, Optional
 
 from pywebpush import webpush, WebPushException
@@ -9,32 +10,36 @@ from medicine_control.models import MemoriaAstrana
 
 logger = logging.getLogger(__name__)
 
+# Configuración de Claves VAPID
 DEFAULT_VAPID_PUBLIC_KEY = os.getenv(
     'VAPID_PUBLIC_KEY',
     'BPp23vdTmlXMSqp0gFgrdUmQTPef9Kdfd_8ntg14c25vyzbYqH4tD10wXcLyvMyZQHCuMqCQJv5rSTyN4tvSLj8'
 )
+
 DEFAULT_VAPID_PRIVATE_KEY = os.getenv(
     'VAPID_PRIVATE_KEY',
-    '-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg1ibY1A7S/auadZor\nQoxWzK/ttlqU1VbJT/jMdHCFFuuhRANCAAT6dt73U5pVzEqqdIBYK3VJkEz3n/Sn\nX3f/J7YNeHNub8s22Kh+LQ9dMF3C8rzMmUBwrjKgkCb+a0k8jeLb0i4/\n-----END PRIVATE KEY-----\n'
+    ''  # Se recomienda definir únicamente vía variable de entorno en producción
 ).replace('\\n', '\n')
 
 VAPID_CLAIMS = {
     'sub': os.getenv('VAPID_ADMIN_EMAIL', 'mailto:admin@astrana.ai')
 }
 
+
 def obtener_vapid_public_key() -> str:
     return DEFAULT_VAPID_PUBLIC_KEY
 
+
 def guardar_suscripcion_push(chat_id: str, sub_info: Dict[str, Any]) -> MemoriaAstrana:
     """Guarda o actualiza la suscripción Push de un dispositivo en MemoriaAstrana."""
-    import hashlib
     endpoint = sub_info.get('endpoint', '')
     if not endpoint:
-        raise ValueError("La suscripción no contiene endpoint válido.")
+        raise ValueError("La suscripción no contiene un endpoint válido.")
 
     # Guardamos con clave única por dispositivo/endpoint
     endpoint_hash = hashlib.sha256(endpoint.encode('utf-8')).hexdigest()[:12]
     clave = f"push_sub_{chat_id}_{endpoint_hash}"
+    
     memoria, _ = MemoriaAstrana.objects.update_or_create(
         chat_id=str(chat_id),
         categoria='contexto',
@@ -48,16 +53,27 @@ def guardar_suscripcion_push(chat_id: str, sub_info: Dict[str, Any]) -> MemoriaA
     logger.info("Suscripción Push guardada para chat_id=%s (hash=%s)", chat_id, endpoint_hash)
     return memoria
 
-def enviar_webpush_recordatorio(titulo: str, cuerpo: str, datos: Optional[Dict[str, Any]] = None) -> int:
+
+def enviar_webpush_recordatorio(
+    titulo: str, 
+    cuerpo: str, 
+    datos: Optional[Dict[str, Any]] = None,
+    chat_id: Optional[str] = None
+) -> int:
     """
-    Envía una notificación Web Push a todos los navegadores/PWA suscritos.
+    Envía una notificación Web Push a los navegadores/PWA suscritos.
+    Si se especifica `chat_id`, solo enviará a las suscripciones de ese usuario.
     Retorna la cantidad de notificaciones enviadas con éxito.
     """
-    suscripciones = MemoriaAstrana.objects.filter(
-        categoria='contexto',
-        clave__startswith='push_sub_',
-        activa=True
-    )
+    filtros = {
+        'categoria': 'contexto',
+        'clave__startswith': 'push_sub_',
+        'activa': True
+    }
+    if chat_id:
+        filtros['chat_id'] = str(chat_id)
+
+    suscripciones = MemoriaAstrana.objects.filter(**filtros)
 
     if not suscripciones.exists():
         logger.warning("No hay suscripciones Web Push activas para enviar recordatorios.")
@@ -66,8 +82,8 @@ def enviar_webpush_recordatorio(titulo: str, cuerpo: str, datos: Optional[Dict[s
     payload = json.dumps({
         'title': titulo,
         'body': cuerpo,
-        'icon': '/astrana/icon-192.png',
-        'badge': '/astrana/icon-192.png',
+        'icon': '/static/images/astrana-icon-192.png',
+        'badge': '/static/images/astrana-icon-192.png',
         'data': datos or {},
         'actions': [
             {'action': 'confirmar_toma', 'title': '✅ Confirmar Toma'},
@@ -90,13 +106,12 @@ def enviar_webpush_recordatorio(titulo: str, cuerpo: str, datos: Optional[Dict[s
             logger.info("Notificación Web Push enviada a %s", sub_memoria.chat_id)
         except WebPushException as ex:
             logger.error("Error enviando Web Push a %s: %s", sub_memoria.chat_id, ex)
-            # Si el endpoint caducó (404 o 410), desactivamos la suscripción
+            # Si el endpoint caducó o no existe (404 Not Found o 410 Gone), se desactiva
             if ex.response is not None and ex.response.status_code in {404, 410}:
                 sub_memoria.activa = False
                 sub_memoria.save(update_fields=['activa'])
-                logger.info("Suscripción expirada desactivada: %s", sub_memoria.chat_id)
+                logger.info("Suscripción expirada desactivada para chat_id=%s", sub_memoria.chat_id)
         except Exception as e:
             logger.exception("Error inesperado en Web Push para %s: %s", sub_memoria.chat_id, e)
 
     return enviados
-
