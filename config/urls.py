@@ -25,4 +25,8 @@ urlpatterns = [
     path('astrana/icon.jpg', views.astrana_icon, name='astrana_icon'),
     path('astrana/icon-<int:size>.png', views.astrana_pwa_icon, name='astrana_pwa_icon'),
     path('api/astrana/chat/', astrana_chat_api, name='astrana_chat_api'),
+    path('api/astrana/pwa/vapid-key/', views.astrana_vapid_public_key, name='astrana_vapid_public_key'),
+    path('api/astrana/pwa/subscribe/', views.astrana_guardar_suscripcion_push, name='astrana_pwa_subscribe'),
+    path('api/astrana/pastillero/confirmar/', views.astrana_confirmar_toma_api, name='astrana_confirmar_toma_api'),
+    path('api/astrana/pastillero/estado-hoy/', views.astrana_estado_pastillero_hoy, name='astrana_estado_pastillero_hoy'),
 ]

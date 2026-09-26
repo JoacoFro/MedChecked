@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from django.http import FileResponse, HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from .telegram_utils import enviar_alerta
 import json
 import requests
@@ -558,6 +559,23 @@ def astrana_chat_api(request):
             else:
                 medicamento = astrana.crear_medicamento_pastillero(nombre, cantidad)
                 respuesta = f'Agregué {medicamento.nombre} con {medicamento.cantidad_total} pastillas.'
+        elif intencion == 'cambiar_horario_recordatorio':
+            hora_info = entidades.get('hora_personalizada')
+            if not hora_info:
+                from Astrana.nlp_engine import extraer_hora_personalizada
+                hora_info = extraer_hora_personalizada(texto_usuario)
+            if hora_info:
+                h, m = hora_info
+                hoy = timezone.localdate()
+                astrana.guardar_memoria(
+                    chat_id='principal',
+                    categoria='preferencia',
+                    clave='horario_recordatorio_hoy',
+                    valor=f"{h}:{m}:{hoy}"
+                )
+                respuesta = f"⏰ Entendido Joaco. Hoy te voy a recordar tomar tus pastillas a las {h:02d}:{m:02d} hs por la PWA."
+            else:
+                respuesta = "❓ ¿A qué hora querés que te haga acordar? (Ejemplo: 'A las 14:30' o 'A las 9 hs')"
         elif astrana.gemini_client is not None:
             clave_historial = f'web-{request.session.session_key}'
             if clave_historial not in astrana.historiales:
@@ -578,3 +596,95 @@ def astrana_chat_api(request):
         import logging
         logging.getLogger(__name__).exception('Error procesando mensaje desde la PWA de Astrana.')
         return JsonResponse({'error': 'Astrana tuvo un problema al procesar el mensaje.'}, status=500)
+
+
+def astrana_vapid_public_key(request):
+    """Devuelve la clave pública VAPID para que el navegador se suscriba a Web Push."""
+    from Astrana.webpush_utils import obtener_vapid_public_key
+    return JsonResponse({'publicKey': obtener_vapid_public_key()})
+
+
+@csrf_exempt
+def astrana_guardar_suscripcion_push(request):
+    """Recibe la suscripción Push del Service Worker y la guarda en la base de datos."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+        subscription = data.get('subscription')
+        if not subscription:
+            return JsonResponse({'error': 'Falta el objeto subscription'}, status=400)
+
+        if not request.session.session_key:
+            request.session.create()
+        chat_id = f"pwa-{request.session.session_key}"
+
+        from Astrana.webpush_utils import guardar_suscripcion_push
+        guardar_suscripcion_push(chat_id, subscription)
+        return JsonResponse({'status': 'success', 'message': 'Suscripción Web Push registrada con éxito.'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def astrana_confirmar_toma_api(request):
+    """Confirma la toma de un medicamento desde la PWA o desde la notificación Push."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        medicamento_id = data.get('medicamento_id')
+
+        from Astrana import main as astrana
+        hoy = timezone.localdate()
+
+        if medicamento_id:
+            med, reg, motivo = astrana.registrar_toma_recordatorio(int(medicamento_id))
+        else:
+            pendientes = astrana.medicamentos_pendientes_ids()
+            if not pendientes:
+                return JsonResponse({'status': 'info', 'message': 'No tenés medicamentos pendientes de toma hoy.'})
+            med, reg, motivo = astrana.registrar_toma_recordatorio(pendientes[0])
+
+        if motivo == 'tomado':
+            msg = f"¡Toma de {med.nombre} confirmada! Quedan {med.cantidad_total} pastillas en el pastillero."
+            return JsonResponse({'status': 'success', 'message': msg, 'medicamento': med.nombre, 'stock': med.cantidad_total})
+        elif motivo == 'sin_stock':
+            return JsonResponse({'status': 'warning', 'message': f"{med.nombre} no tiene stock disponible.", 'medicamento': med.nombre})
+        else:
+            return JsonResponse({'status': 'info', 'message': f"{med.nombre} ya figuraba como tomado hoy.", 'medicamento': med.nombre})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def astrana_estado_pastillero_hoy(request):
+    """Consulta el estado del pastillero para el día de hoy para mostrar tarjetas interactivas en la PWA."""
+    try:
+        from Astrana import main as astrana
+        hoy = timezone.localdate()
+        medicamentos = Pastillero.objects.all().order_by('nombre')
+        pendientes = []
+        tomados = []
+
+        for m in medicamentos:
+            if m.estado_diario_fecha != hoy:
+                m.estado_diario = 'pendiente'
+                m.estado_diario_fecha = hoy
+                m.save(update_fields=['estado_diario', 'estado_diario_fecha'])
+
+            item = {'id': m.id, 'nombre': m.nombre, 'cantidad_total': m.cantidad_total, 'estado': m.estado_diario}
+            if m.estado_diario == 'pendiente' and m.cantidad_total > 0:
+                pendientes.append(item)
+            elif m.estado_diario == 'tomado':
+                tomados.append(item)
+
+        return JsonResponse({
+            'fecha': str(hoy),
+            'pendientes': pendientes,
+            'tomados': tomados,
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

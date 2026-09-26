@@ -96,6 +96,54 @@ def extraer_rango_fechas(texto: str) -> Tuple[Optional[date], Optional[date]]:
         return hoy, hoy
     return None, None
 
+def extraer_hora_personalizada(texto: str) -> Optional[Tuple[int, int]]:
+    """Extrae una hora y minuto (HH, MM) de expresiones como 'a las 14', 'a las 15:30', 'a las 9 hs', 'a las 7 de la tarde'."""
+    # 1. Buscar primero en texto original con dos puntos o punto (ej: 14:30 o 8.15)
+    match_hhmm_orig = re.search(r'\b([01]?\d|2[0-3])[:.]([0-5]\d)\b', texto)
+    if match_hhmm_orig:
+        return int(match_hhmm_orig.group(1)), int(match_hhmm_orig.group(2))
+
+    norm = normalizar_texto(texto)
+
+    # 2. Formato con espacio tras normalizar: "a las 14 30"
+    match_espacio = re.search(r'\b(?:a\s+las?|para\s+las?)\s+([01]?\d|2[0-3])\s+([0-5]\d)\b', norm)
+    if match_espacio:
+        return int(match_espacio.group(1)), int(match_espacio.group(2))
+
+    # 3. Expresiones "y media" / "y cuarto"
+    match_media = re.search(r'\b(?:a\s+las?|para\s+las?)\s+([01]?\d|2[0-3])\s+y\s+media\b', norm)
+    if match_media:
+        return int(match_media.group(1)), 30
+
+    match_cuarto = re.search(r'\b(?:a\s+las?|para\s+las?)\s+([01]?\d|2[0-3])\s+y\s+cuarto\b', norm)
+    if match_cuarto:
+        return int(match_cuarto.group(1)), 15
+
+    # 4. Contexto de tarde/noche (ej: "a las 7 de la tarde" -> 19:00)
+    match_tarde = re.search(r'\b(?:a\s+las?|para\s+las?)\s+([1-9]|1[0-2])\s+(?:de la tarde|de la noche|pm)\b', norm)
+    if match_tarde:
+        h = int(match_tarde.group(1))
+        if h < 12:
+            h += 12
+        return h, 0
+
+    # 5. Contexto de mañana (ej: "a las 10 de la manana" -> 10:00)
+    match_manana = re.search(r'\b(?:a\s+las?|para\s+las?)\s+([1-9]|1[0-2])\s+(?:de la manana|am)\b', norm)
+    if match_manana:
+        return int(match_manana.group(1)), 0
+
+    # 6. Formato simple "a las 14", "a las 9 hs", "las 15 horas"
+    match_hora = re.search(r'\b(?:a\s+las?|para\s+las?|las?)\s+([01]?\d|2[0-3])(?:\s*(?:hs|horas|h))?\b', norm)
+    if match_hora:
+        return int(match_hora.group(1)), 0
+
+    # 7. Formato directo "14 hs", "9 hs", "15hs"
+    match_directo = re.search(r'\b([01]?\d|2[0-3])\s*(?:hs|horas|h)\b', norm)
+    if match_directo:
+        return int(match_directo.group(1)), 0
+
+    return None
+
 # --- 2. DATASET DE ENTRENAMIENTO DE INTENCIONES ---
 
 INTENT_DATASET: Dict[str, List[str]] = {
@@ -283,6 +331,27 @@ INTENT_DATASET: Dict[str, List[str]] = {
         'agregar pastilla al pastillero',
         'anotar nuevo medicamento',
         'incorporar remedio nuevo',
+    ],
+    'cambiar_horario_recordatorio': [
+        'haceme acordar a las 14',
+        'hoy avisame a las 15 hs',
+        'recordame a las 9',
+        'recordame tomar las pastillas a las 12',
+        'cambia el horario del pastillero a las 11',
+        'hoy recordame a las 16:30',
+        'avisame de las pastillas a las 8',
+        'haceme acordar mas tarde a las 13',
+        'posponer recordatorio para las 15',
+        'hoy avisame de las pastillas a las 14',
+        'recordame hoy a las 10',
+        'podes hacerme acordar a las 18',
+        'cambiar horario de recordatorio a las 9',
+        'haceme acordar a las 12 del mediodia',
+        'hoy tomare la pastilla a las 15',
+        'acordame a las 8',
+        'avisame a las 19',
+        'recordame a las 20 hs',
+        'cambia la hora del recordatorio a las 14',
     ],
     'saludo': [
         'hola',
@@ -521,6 +590,11 @@ class NLPEngine:
                     intencion = 'registrar_toma'
                     confianza = max(confianza, 0.90)
 
+        hora_personalizada = extraer_hora_personalizada(texto_usuario)
+        if hora_personalizada and (palabras & {'acordar', 'recordar', 'recordame', 'avisame', 'pastillero', 'pastillas', 'posponer', 'horario', 'hora'}):
+            intencion = 'cambiar_horario_recordatorio'
+            confianza = max(confianza, 0.95)
+
         # Si no se especificó cantidad para registrar_toma, por defecto suele ser 1
         if intencion == 'registrar_toma' and cantidad is None:
             cantidad = 1
@@ -533,6 +607,7 @@ class NLPEngine:
             'fecha_fin': fecha_fin,
             'medicamento': medicamento,
             'insumo': insumo,
+            'hora_personalizada': hora_personalizada,
         }
 
         return NLPResult(

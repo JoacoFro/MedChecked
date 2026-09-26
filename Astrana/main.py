@@ -36,15 +36,13 @@ from medicine_control.models import (
     MemoriaAstrana,
     AprendizajeAstrana,
 )
-
+from Astrana.nlp_engine import nlp_engine, NLPResult
 try:
     from google import genai
     from google.genai import types
-except ImportError:  # pragma: no cover
+except ImportError:
     genai = None
     types = None
-
-from Astrana.nlp_engine import nlp_engine, NLPResult
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -90,7 +88,7 @@ def consultar_estado_stock():
         for i in insumos:
             aut = i.autonomia_smart
             emoji = "🔴" if aut <= 10 else "🟡" if aut <= 15 else "🟢"
-            reporte += (f"• {i.nombre}: {i.total_unidades_reales} un. "
+            reporte += (f"• **{i.nombre}**: {i.total_unidades_reales} un. "
                         f"({i.stock_actual_cajas} cajas, {i.backup_unidades} backup). "
                         f"Autonomía: {emoji} {aut} días.\n")
         return reporte
@@ -145,9 +143,9 @@ def registrar_aprendizaje(chat_id, frase, intencion, respuesta=''):
 
 def interpretar_aclaracion_sondas(texto):
     palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto)))
-    if palabras & {'stock', 'disponible', 'cantidad', 'actual', 'existente', 'restante'}:
+    if palabras & {'stock', 'disponible', 'cantidad'}:
         return 'stock_sondas'
-    if palabras & {'movimiento', 'movimientos', 'ingreso','entrada','entradas', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
+    if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
         return 'movimientos_sondas'
     if palabras & {'autonomia', 'dias', 'duracion', 'alcance'}:
         return 'autonomia_sondas'
@@ -191,13 +189,13 @@ def detectar_consulta_con_memoria(chat_id, texto_usuario):
 def intencion_desde_regla(texto):
     palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto)))
     if 'sonda' in palabras or 'sondas' in palabras:
-        if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos','entrada','entradas', 'egreso', 'egresos', 'salida', 'salidas'}:
+        if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
             return 'movimientos_sondas'
         if palabras & {'autonomia', 'dias', 'duracion'}:
             return 'autonomia_sondas'
-        if palabras & {'stock', 'cantidad', 'disponible', 'actual', 'existente', 'restante'}:
+        if palabras & {'stock', 'cantidad', 'disponible'}:
             return 'stock_sondas'
-    if palabras & {'tramite', 'tramites', 'envio', 'envios', 'pedido', 'pedidos'}:
+    if palabras & {'tramite', 'tramites', 'envio', 'envios'}:
         return 'movimientos_tramites'
     return None
 
@@ -270,15 +268,15 @@ def consultar_stock_pastillero():
         if not medicamentos.exists():
             return "No hay medicamentos registrados en el pastillero."
 
-        reporte = "💊 Stock del Pastillero:\n"
+        reporte = "💊 **Stock del Pastillero:**\n"
         for medicamento in medicamentos:
-            reporte += f"• {medicamento.nombre}: {medicamento.cantidad_total} pastillas.\n"
+            reporte += f"• **{medicamento.nombre}**: {medicamento.cantidad_total} pastillas.\n"
         return reporte
     except Exception as e:
         return f"Error al consultar el stock del pastillero: {e}"
 
-def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False):
-    """Devuelve movimientos recientes de Sondas, filtrados opcionalmente por tipo."""
+def consultar_ultimos_movimientos_sondas():
+    """Devuelve los últimos 10 ingresos y egresos registrados para Sondas."""
     try:
         connection.close_if_unusable_or_obsolete()
         ingresos = Pedido.objects.filter(
@@ -288,39 +286,7 @@ def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False
             insumo__nombre__icontains='sonda'
         ).select_related('insumo').order_by('-fecha', '-id')[:10]
 
-        if tipo_movimiento == 'ingreso':
-            ingresos = ingresos[:1] if solo_ultimo else ingresos
-            reporte = (
-                "📥 El ultimo ingreso de Sondas recibido fue el \n" if solo_ultimo
-                else "📥 Te muestro los ultimos 10 ingresos de Sondas:\n"
-            )
-            if ingresos:
-                for ingreso in ingresos:
-                    tipo = ingreso.get_tipo_stock_display()
-                    reporte += (
-                        f" {ingreso.fecha:%d/%m/%Y} la cantidad recibida es de {ingreso.cantidad} sondas del "
-                        f"{tipo} a traves de {ingreso.lugar_compra or 'Sin origen informado'}\n"
-                    )
-            else:
-                reporte += "No hay ingresos registrados.\n"
-            return reporte
-
-        if tipo_movimiento == 'egreso':
-            egresos = egresos[:1] if solo_ultimo else egresos
-            reporte = (
-                "📤 El ultimo egreso de Sondas fue:\n" if solo_ultimo
-                else "📤 Te muestro los ultimos 10 egresos de Sondas:\n"
-            )
-            if egresos:
-                for egreso in egresos:
-                    tipo = 'Stock normal' if egreso.tipo_stock == 'stock_normal' else 'Stock de seguridad'
-                    fecha = timezone.localtime(egreso.fecha).strftime('%d/%m/%Y %H:%M')
-                    reporte += f"• {fecha} | {egreso.cantidad} un. | {tipo}\n"
-            else:
-                reporte += "No hay egresos registrados.\n"
-            return reporte
-
-        reporte = "📥 Acá estan los ultimos 10 ingresos de Sondas:\n"
+        reporte = "📥 **Últimos 10 ingresos de Sondas:**\n"
         if ingresos:
             for ingreso in ingresos:
                 tipo = ingreso.get_tipo_stock_display()
@@ -331,12 +297,14 @@ def consultar_ultimos_movimientos_sondas(tipo_movimiento=None, solo_ultimo=False
         else:
             reporte += "No hay ingresos registrados.\n"
 
-        reporte += "\n📤 Acá estan los ultimos 10 egresos de Sondas:\n"
+        reporte += "\n📤 **Últimos 10 egresos de Sondas:**\n"
         if egresos:
             for egreso in egresos:
                 tipo = 'Stock normal' if egreso.tipo_stock == 'stock_normal' else 'Stock de seguridad'
                 fecha = timezone.localtime(egreso.fecha).strftime('%d/%m/%Y %H:%M')
-                reporte += f"• {fecha} | {egreso.cantidad} un. | {tipo}\n"
+                reporte += (
+                    f"• {fecha} | {egreso.cantidad} un. | {tipo}\n"
+                )
         else:
             reporte += "No hay egresos registrados.\n"
 
@@ -352,7 +320,7 @@ def consultar_ultimas_tomas():
         if not tomas:
             return "No hay tomas registradas en el pastillero."
 
-        reporte = "🗓 Últimas tomas:\n"
+        reporte = "🗓 **Últimas tomas:**\n"
         for toma in tomas:
             fecha = timezone.localtime(toma.fecha_hora).strftime('%d/%m/%Y %H:%M')
             reporte += f"• **{toma.medicamento.nombre}**: {toma.cantidad} un. ({fecha})\n"
@@ -439,16 +407,16 @@ def consultar_tomas_medicamentos(texto_usuario, solo_ultimas=False):
             periodo = f'el {fecha_inicio:%d/%m/%Y}'
 
         if solo_ultimas:
-            encabezado = f'🗓 Últimas tomas de {nombre}:'
+            encabezado = f'🗓 **Últimas tomas de {nombre}:**'
         else:
-            encabezado = f'💊 Tomas de {nombre} {periodo}:'.replace('  ', ' ')
+            encabezado = f'💊 **Tomas de {nombre} {periodo}:**'.replace('  ', ' ')
         if not tomas:
             return f'No hay tomas registradas de {nombre} {periodo}.'.replace('  ', ' ')
 
         reporte = encabezado + '\n'
         for toma in tomas:
             fecha = timezone.localtime(toma.fecha_hora).strftime('%d/%m/%Y %H:%M')
-            reporte += f'• {toma.medicamento.nombre}: {toma.cantidad} un. ({fecha})\n'
+            reporte += f'• **{toma.medicamento.nombre}**: {toma.cantidad} un. ({fecha})\n'
         return reporte
     except Exception as error:
         return f'Error al consultar las tomas del pastillero: {error}'
@@ -469,7 +437,7 @@ def consultar_si_tome_medicamento(texto_usuario):
     periodo = 'hoy' if fecha_inicio == timezone.localdate() else 'en el período consultado'
     if existe:
         return f'✅ Sí, registraste una toma de {medicamento.nombre} {periodo}.'
-    return f'❌ No encontré que hayas tomado {medicamento.nombre} {periodo}.'
+    return f'❌ No encontré una toma de {medicamento.nombre} {periodo}.'
 
 def registrar_movimiento(nombre_insumo: str, accion: str, cantidad: int, tipo_stock: str):
     """
@@ -665,11 +633,11 @@ def obtener_resumen_pedidos():
             fecha_cierre__isnull=False,
         ).order_by('-fecha_cierre', '-id')[:10]
 
-        reporte = "📋 Joaco, estos son los trámites en curso :\n"
+        reporte = "📋 **Trámites en curso:**\n"
         if en_curso:
             for tramite in en_curso:
                 reporte += (
-                    f"• {tramite.get_tipo_display()} | "
+                    f"• **{tramite.get_tipo_display()}** | "
                     f"Estado: {tramite.get_estado_display()} | "
                     f"Cantidad: {tramite.cantidad_pedida} | "
                     f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
@@ -678,16 +646,16 @@ def obtener_resumen_pedidos():
         else:
             reporte += "No hay trámites en curso.\n"
 
-        reporte += "\n✅ Trámites cerrados recientemente:\n"
+        reporte += "\n✅ **Trámites cerrados recientemente:**\n"
         if cerrados:
             for tramite in cerrados:
                 reporte += (
-                    f" {tramite.get_tipo_display()} | "
+                    f"• **{tramite.get_tipo_display()}** | "
                     f"Estado: {tramite.get_estado_display()} | "
                     f"Cantidad: {tramite.cantidad_pedida} | "
                     f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
-                    f"cierre: {tramite.fecha_cierre:%d/%m/%Y} | "
-                    f"demora: {tramite.demora_real} días\n"
+                    f"Cierre: {tramite.fecha_cierre:%d/%m/%Y} | "
+                    f"Demora: {tramite.demora_real} días\n"
                 )
         else:
             reporte += "No hay trámites cerrados recientemente.\n"
@@ -697,22 +665,22 @@ def obtener_resumen_pedidos():
         return f"Error en resumen: {e}"
 
 def consultar_ultimos_tramites():
-    """Devuelve los últimos 10 movimientos registrados en Envio."""
+    """Devuelve los últimos 5 movimientos registrados en Envio."""
     try:
         connection.close_if_unusable_or_obsolete()
-        tramites = Envio.objects.order_by('-fecha_solicitud', '-id')[:10]
+        tramites = Envio.objects.order_by('-fecha_solicitud', '-id')[:5]
 
         if not tramites:
             return "📋 No hay movimientos registrados en el historial de trámites."
 
-        reporte = "📋 Joaco, estos son los últimos 10 movimientos que tuvimos de los trámites:**\n"
+        reporte = "📋 **Últimos 5 movimientos de trámites:**\n"
         for tramite in tramites:
             cierre = (
                 tramite.fecha_cierre.strftime('%d/%m/%Y')
                 if tramite.fecha_cierre else 'Sin cerrar'
             )
             reporte += (
-                f"• {tramite.get_tipo_display()} | "
+                f"• **{tramite.get_tipo_display()}** | "
                 f"Estado: {tramite.get_estado_display()} | "
                 f"Cantidad: {tramite.cantidad_pedida} | "
                 f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
@@ -722,82 +690,6 @@ def consultar_ultimos_tramites():
         return reporte
     except Exception as e:
         return f"Error al consultar el historial de trámites: {e}"
-
-
-def consultar_ultimo_tramite_recibido():
-    """Devuelve el envío recibido más recientemente."""
-    try:
-        connection.close_if_unusable_or_obsolete()
-        tramite = Envio.objects.filter(
-            estado='recibido', fecha_cierre__isnull=False
-        ).order_by('-fecha_cierre', '-id').first()
-        if not tramite:
-            return 'No hay trámites recibidos registrados.'
-
-        return (
-            '✅ El ultimo trámite recibido fue de:\n'
-            f'{tramite.get_tipo_display()} por una '
-            f'cantidad de {tramite.cantidad_pedida} sondas '
-            f'que lo solicitamos en la fecha {tramite.fecha_solicitud:%d/%m/%Y} y lo '
-            f'recibimos en la fecha {tramite.fecha_cierre:%d/%m/%Y}, la demora fue de'
-            f'{tramite.demora_real} días'
-        )
-    except Exception as e:
-        return f'Error al consultar el último trámite recibido: {e}'
-
-
-def consultar_demora_promedio_tramites():
-    """Calcula la demora promedio de los trámites recibidos."""
-    try:
-        connection.close_if_unusable_or_obsolete()
-        tramites = Envio.objects.filter(
-            estado='recibido', fecha_cierre__isnull=False
-        )
-        demoras = [tramite.demora_real for tramite in tramites]
-        if not demoras:
-            return 'No hay trámites recibidos suficientes para calcular una demora promedio.'
-
-        promedio = sum(demoras) / len(demoras)
-        return f'⏱ Joaco la dmora promedio en los trámites es de: {promedio:.0f} días).'
-    except Exception as e:
-        return f'Error al calcular la demora promedio: {e}'
-
-
-def consultar_proxima_fecha_pedido():
-    """Sugiere el próximo pedido 30 días después de la última solicitud."""
-    try:
-        connection.close_if_unusable_or_obsolete()
-        ultimo = Envio.objects.order_by('-fecha_solicitud', '-id').first()
-        if not ultimo:
-            return 'No hay solicitudes registradas para sugerir una próxima fecha de pedido.'
-
-        fecha_sugerida = ultimo.fecha_solicitud + timedelta(days=30)
-        return (
-            '📅 Joaco la próxima fecha sugerida para hacer el pedido es: '
-            f'{fecha_sugerida:%d/%m/%Y}\n'
-            f'Tomando como base el ultimo pedido y calculando un promedio de 30 dias aprox {ultimo.fecha_solicitud:%d/%m/%Y} '
-            
-        )
-    except Exception as e:
-        return f'Error al calcular la próxima fecha de pedido: {e}'
-
-
-def detalle_consulta_tramites(texto_usuario):
-    """Identifica el tipo de consulta solicitada sobre trámites y envíos."""
-    palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto_usuario)))
-    if palabras & {'recibido', 'recibida', 'recibidos', 'recibidas'} and palabras & {
-        'ultimo', 'ultima', 'ultimos', 'ultimas', 'reciente', 'recientes'
-    }:
-        return 'ultimo_recibido'
-    if palabras & {'promedio', 'promedios', 'demora', 'demoras', 'tarda', 'tardan'}:
-        return 'demora_promedio'
-    if palabras & {'proximo', 'proxima', 'proximos', 'proximas', 'siguiente'} and palabras & {
-        'pedido', 'pedidos', 'tramite', 'tramites', 'envio', 'envios', 'fecha'
-    }:
-        return 'proxima_fecha'
-    if palabras & {'movimiento', 'movimientos', 'historial', 'resumen'}:
-        return 'ultimos_movimientos'
-    return 'estado'
 
 # --- 4. CONFIGURACIÓN DE GEMINI Y BOT ---
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
@@ -1036,16 +928,14 @@ def detectar_consulta_datos(texto_usuario):
         return 'verificar_toma_medicamento'
 
     habla_de_tramites = bool(palabras & {
-        'tramite', 'tramites', 'envio', 'envios', 'pedido', 'pedidos',
+        'tramite', 'tramites', 'envio', 'envios',
     })
     consulta_informacion = bool(palabras & {
         'reporte', 'ultimo', 'ultimos', 'movimiento', 'movimientos',
         'historial', 'registro', 'registros', 'estado', 'informacion',
         'situacion', 'cual', 'cuales', 'abierto', 'abiertos',
         'pendiente', 'pendientes', 'cerrado', 'cerrados', 'hay', 'tengo',
-        'paso', 'pasaron', 'sucedio', 'sucede', 'recibido', 'recibida',
-        'recibidos', 'recibidas', 'demora', 'demoras', 'promedio',
-        'proximo', 'proxima', 'siguiente', 'fecha',
+        'paso', 'pasaron', 'sucedio', 'sucede',
     })
     accion_operativa = bool(palabras & {
         'iniciar', 'inicia', 'cerrar', 'cierra', 'crear',
@@ -1055,21 +945,6 @@ def detectar_consulta_datos(texto_usuario):
         return 'movimientos_tramites'
 
     return None
-
-
-def detalle_movimiento_sondas(texto_usuario):
-    """Determina si se pidió ingreso/egreso y si debe mostrarse solo el último."""
-    palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto_usuario)))
-    palabras_ingreso = palabras & {'ingreso', 'ingresos', 'entrada', 'entradas'}
-    palabras_egreso = palabras & {'egreso', 'egresos', 'salida', 'salidas'}
-    tipo = None
-    if palabras_ingreso and not palabras_egreso:
-        tipo = 'ingreso'
-    elif palabras_egreso and not palabras_ingreso:
-        tipo = 'egreso'
-
-    solo_ultimo = bool(palabras & {'ultimo', 'ultima'})
-    return tipo, solo_ultimo
 
 
 def es_reporte_ambiguo(texto_usuario):
@@ -1116,7 +991,7 @@ async def mostrar_submenu_stock(query):
         [InlineKeyboardButton("➖ Quitar Stock", callback_data="op_stock_quitar")],
         [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
     ]
-    await query.edit_message_text("📦 Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_text("📦 **Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def mostrar_submenu_pastillero(query):
     keyboard = [
@@ -1124,7 +999,7 @@ async def mostrar_submenu_pastillero(query):
         [InlineKeyboardButton("🗓 Últimas tomas", callback_data="op_pastillero_tomas")],
         [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
     ]
-    await query.edit_message_text("📦 Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_text("📦 **Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def mostrar_submenu_tramites(query):
     keyboard = [
@@ -1134,7 +1009,7 @@ async def mostrar_submenu_tramites(query):
         [InlineKeyboardButton("✅ Cerrar trámites abiertos", callback_data="op_tramites_cerrar")],
         [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
     ]
-    await query.edit_message_text("📋 Menú de Trámites:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_text("📋 **Menú de Trámites:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 def obtener_boton_volver():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Volver al Menú Principal", callback_data="menu_principal")]])
@@ -1252,25 +1127,33 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Modo Chat Libre
     elif opcion == "op_chat":
-        await query.edit_message_text("💬 Modo Chat con IA Astrana esta Activado:\n Joaco podés pedirme o consultar cualquier cosa que necesites.", reply_markup=obtener_boton_volver())
+        await query.edit_message_text("💬 **Modo Chat con IA Activado:**\nPodés escribirme cualquier consulta libremente.", reply_markup=obtener_boton_volver())
 
 # --- 7. ATENCIÓN DE MENSAJES Y CHAT ---
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-
     texto_usuario = update.message.text.strip()
     texto_lower = texto_usuario.lower()
 
-    if "Hola Astrana" in texto_lower or texto_lower in ["/start", "/menu"]:
-        await update.message.reply_text('¡Hola Joaco! como va? \n\n En que te puedo ayudar?👇')
+    # Disparador para mostrar el menú
+    if "hola astrana" in texto_lower or texto_lower in ["/start", "/menu"]:
         await mostrar_menu_principal(update, context)
         return
 
     try:
-        alta_pendiente = context.user_data.get('alta_medicamento_pendiente')
+        if es_reporte_ambiguo(texto_usuario):
+            context.user_data['aclaracion_pendiente'] = 'sondas'
+            await update.message.reply_text(
+                '¿A qué reporte te estás refiriendo?\n\n'
+                '• Stock de Sondas\n'
+                '• Movimientos de entrada y salida de Sondas\n'
+                '• Envíos\n'
+                '• Reporte de la autonomía actual',
+                reply_markup=obtener_opciones_sondas(),
+            )
+            return
 
+        alta_pendiente = context.user_data.get('alta_medicamento_pendiente')
         if alta_pendiente == 'confirmar':
             if respuesta_si(texto_usuario):
                 context.user_data['alta_medicamento_pendiente'] = 'nombre'
@@ -1311,34 +1194,24 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             str(update.effective_chat.id), texto_usuario
         )
         if comando_memoria:
-            await update.message.reply_text(comando_memoria, reply_markup=obtener_boton_volver())
-            return
-
-        if es_reporte_ambiguo(texto_usuario):
-            context.user_data['aclaracion_pendiente'] = 'sondas'
             await update.message.reply_text(
-                '¿A qué reporte te estás refiriendo?\n\n'
-                '• Stock de Sondas\n'
-                '• Movimientos de entrada y salida de Sondas\n'
-                '• Envíos\n'
-                '• Reporte de la autonomía actual',
-                reply_markup=obtener_opciones_sondas(),
+                comando_memoria,
+                reply_markup=obtener_boton_volver(),
             )
             return
 
         chat_id = str(update.effective_chat.id)
-        intencion = await sync_to_async(detectar_consulta_con_memoria)(chat_id, texto_usuario)
-        if not intencion:
-            intencion = detectar_consulta_datos(texto_usuario)
 
-        entidades = {}
-        confianza = 0.0
-        if intencion is None:
-            nlp_res = await sync_to_async(nlp_engine.interpretar)(texto_usuario, chat_id=chat_id)
-            intencion = nlp_res.intent
-            entidades = nlp_res.entities or {}
-            confianza = nlp_res.confidence
-            logger.info("NLP Local: intencion='%s', conf=%.2f, entidades=%s", intencion, confianza, entidades)
+        # 1. Chequeo de memoria directa (alias y reglas aprendidas del chat)
+        intencion_memoria = await sync_to_async(detectar_consulta_con_memoria)(chat_id, texto_usuario)
+
+        # 2. Análisis NLP local con scikit-learn y rapidfuzz
+        nlp_res = await sync_to_async(nlp_engine.interpretar)(texto_usuario, chat_id=chat_id)
+        intencion = intencion_memoria or nlp_res.intent
+        entidades = nlp_res.entities
+        confianza = nlp_res.confidence
+
+        logger.info("NLP Local: intencion='%s', conf=%.2f, entidades=%s", intencion, confianza, entidades)
 
         if intencion == 'saludo':
             await mostrar_menu_principal(update, context)
@@ -1346,51 +1219,32 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if intencion == 'consultar_stock':
             reporte = await sync_to_async(consultar_estado_stock)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
         if intencion == 'consultar_autonomia':
             reporte = await sync_to_async(consultar_autonomia_sondas)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
         if intencion == 'movimientos_sondas':
-            tipo_movimiento, solo_ultimo = detalle_movimiento_sondas(texto_usuario)
-            reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)(
-                tipo_movimiento=tipo_movimiento,
-                solo_ultimo=solo_ultimo,
-            )
+            reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
             await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
-            return
-
-        if intencion == 'aclarar_sondas':
-            context.user_data['aclaracion_pendiente'] = 'sondas'
-            await update.message.reply_text(
-                'Claro. ¿A qué reporte te referís?\n\n'
-                '• Stock de Sondas\n'
-                '• Movimientos de entrada y salida de Sondas\n'
-                '• Envíos\n'
-                '• Reporte de la autonomía actual',
-                reply_markup=obtener_opciones_sondas(),
-            )
             return
 
         if intencion == 'agregar_stock':
             cantidad = entidades.get('cantidad')
             tipo_stock = entidades.get('tipo_stock', 'stock_normal')
             insumo = entidades.get('insumo')
-            nombre_insumo = insumo.nombre if insumo else 'Sondas'
+            nombre_insumo = insumo.nombre if insumo else "Sondas"
             if not cantidad:
                 await update.message.reply_text(
                     f"❓ ¿Cuántas cajas o unidades de {nombre_insumo} ingresaron? (Ej: 'Ingresaron 2 cajas')",
-                    reply_markup=obtener_boton_volver(),
+                    reply_markup=obtener_boton_volver()
                 )
                 return
             res = await sync_to_async(registrar_movimiento)(
-                nombre_insumo=nombre_insumo,
-                accion='cargar',
-                cantidad=cantidad,
-                tipo_stock=tipo_stock,
+                nombre_insumo=nombre_insumo, accion="cargar", cantidad=cantidad, tipo_stock=tipo_stock
             )
             await update.message.reply_text(res, reply_markup=obtener_boton_volver())
             return
@@ -1399,65 +1253,61 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cantidad = entidades.get('cantidad')
             tipo_stock = entidades.get('tipo_stock', 'stock_normal')
             insumo = entidades.get('insumo')
-            nombre_insumo = insumo.nombre if insumo else 'Sondas'
+            nombre_insumo = insumo.nombre if insumo else "Sondas"
             if not cantidad:
                 await update.message.reply_text(
                     f"❓ ¿Cuántas cajas o unidades de {nombre_insumo} retiraste? (Ej: 'Descontar 1 caja')",
-                    reply_markup=obtener_boton_volver(),
+                    reply_markup=obtener_boton_volver()
                 )
                 return
             res = await sync_to_async(registrar_movimiento)(
-                nombre_insumo=nombre_insumo,
-                accion='descargar',
-                cantidad=cantidad,
-                tipo_stock=tipo_stock,
+                nombre_insumo=nombre_insumo, accion="descargar", cantidad=cantidad, tipo_stock=tipo_stock
             )
             await update.message.reply_text(res, reply_markup=obtener_boton_volver())
             return
 
-        if intencion == 'consultar_tramites' or intencion == 'movimientos_tramites':
-            detalle = detalle_consulta_tramites(texto_usuario)
-            consultas_tramites = {
-                'estado': obtener_resumen_pedidos,
-                'ultimo_recibido': consultar_ultimo_tramite_recibido,
-                'demora_promedio': consultar_demora_promedio_tramites,
-                'proxima_fecha': consultar_proxima_fecha_pedido,
-                'ultimos_movimientos': consultar_ultimos_tramites,
-            }
-            reporte = await sync_to_async(consultas_tramites[detalle])()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
+        if intencion == 'consultar_tramites':
+            reporte = await sync_to_async(obtener_resumen_pedidos)()
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
         if intencion == 'iniciar_tramite':
             tipo_tramite = entidades.get('tipo_tramite', 'os')
             cantidad = entidades.get('cantidad')
             res = await sync_to_async(iniciar_tramite_pedido)(tipo_tramite=tipo_tramite, cantidad=cantidad)
-            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
+            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
         if intencion == 'cerrar_tramite':
             tipo_tramite = entidades.get('tipo_tramite', 'os')
             tipo_stock = entidades.get('tipo_stock', 'stock_normal')
             res = await sync_to_async(cerrar_tramite_pedido)(tipo_tramite=tipo_tramite, tipo_stock=tipo_stock)
-            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
+            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
-        if intencion in {'pastillero_stock', 'consultar_tomas'}:
-            reporte = await sync_to_async(consultar_stock_pastillero)() if intencion == 'pastillero_stock' else await sync_to_async(consultar_tomas_medicamentos)(texto_usuario, solo_ultimas=True)
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode='Markdown')
+        if intencion == 'pastillero_stock':
+            reporte = await sync_to_async(consultar_stock_pastillero)()
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
-        if intencion in {'verificar_toma_medicamento', 'consultar_si_tomo'}:
-            medicamento = await sync_to_async(medicamento_mencionado)(texto_usuario)
-            if medicamento is None and not consulta_medicamento_generica(texto_usuario):
+        if intencion == 'consultar_tomas':
+            reporte = await sync_to_async(consultar_tomas_medicamentos)(texto_usuario, solo_ultimas=True)
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
+            return
+
+        if intencion == 'consultar_si_tomo':
+            medicamento = entidades.get('medicamento')
+            med_nombre = entidades.get('medicamento_nombre')
+            if medicamento is None and med_nombre and not consulta_medicamento_generica(texto_usuario):
                 context.user_data['alta_medicamento_pendiente'] = 'confirmar'
+                context.user_data['medicamento_nuevo_nombre'] = med_nombre
                 await update.message.reply_text(
-                    '❌ No encontré un medicamento registrado con ese nombre.\n¿Te gustaría que lo agreguemos?',
-                    reply_markup=obtener_boton_volver(),
+                    f"❌ No encontré un medicamento llamado '{med_nombre}' en el pastillero.\n¿Te gustaría que lo agreguemos?",
+                    reply_markup=obtener_boton_volver()
                 )
                 return
             reporte = await sync_to_async(consultar_si_tome_medicamento)(texto_usuario)
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
+            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
         if intencion == 'registrar_toma':
@@ -1470,12 +1320,12 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data['medicamento_nuevo_nombre'] = med_nombre
                 await update.message.reply_text(
                     f"❌ No encontré '{med_nombre}' en el pastillero.\n¿Te gustaría darlo de alta primero?",
-                    reply_markup=obtener_boton_volver(),
+                    reply_markup=obtener_boton_volver()
                 )
                 return
 
             if medicamento:
-                med_obj, _, motivo = await sync_to_async(registrar_toma_recordatorio)(medicamento.id)
+                med_obj, reg, motivo = await sync_to_async(registrar_toma_recordatorio)(medicamento.id)
                 tarea = recordatorio_tasks.pop(medicamento.id, None)
                 if tarea:
                     tarea.cancel()
@@ -1489,7 +1339,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             rep = await sync_to_async(consultar_stock_pastillero)()
-            await update.message.reply_text(f"❓ ¿Qué pastilla tomaste?\n\n{rep}", reply_markup=obtener_boton_volver(), parse_mode='Markdown')
+            await update.message.reply_text(f"❓ ¿Qué pastilla tomaste?\n\n{rep}", reply_markup=obtener_boton_volver(), parse_mode="Markdown")
             return
 
         if intencion == 'agregar_medicamento':
@@ -1499,55 +1349,60 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 med = await sync_to_async(crear_medicamento_pastillero)(med_nombre, cantidad)
                 await update.message.reply_text(
                     f"✅ Agregué {med.nombre} con {med.cantidad_total} pastillas al pastillero.",
-                    reply_markup=obtener_boton_volver(),
+                    reply_markup=obtener_boton_volver()
                 )
                 return
-            if med_nombre:
+            elif med_nombre:
                 context.user_data['medicamento_nuevo_nombre'] = med_nombre
                 context.user_data['alta_medicamento_pendiente'] = 'cantidad'
                 await update.message.reply_text(f"¿Cuántas pastillas de {med_nombre} tenés?")
                 return
-            context.user_data['alta_medicamento_pendiente'] = 'nombre'
-            await update.message.reply_text('Perfecto. ¿Cuál es el nombre del medicamento?')
-            return
+            else:
+                context.user_data['alta_medicamento_pendiente'] = 'nombre'
+                await update.message.reply_text("Perfecto. ¿Cuál es el nombre del medicamento?")
+                return
 
-        if gemini_client is None:
-            await update.message.reply_text(
-                '⚠️ El chat de Astrana no está disponible porque Gemini no se inicializó.',
-                reply_markup=obtener_boton_volver(),
+        # Fallback si Gemini estuviera configurado
+        if gemini_client is not None:
+            user_id = update.effective_user.id
+            if user_id not in historiales:
+                historiales[user_id] = gemini_client.chats.create(
+                    model='gemini-3.6-flash',
+                    config=gemini_config,
+                )
+            await sync_to_async(connection.close_if_unusable_or_obsolete)()
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    historiales[user_id].send_message,
+                    texto_usuario,
+                    config=gemini_config,
+                ),
+                timeout=35,
             )
-            return
+            if response.text:
+                await update.message.reply_text(response.text, reply_markup=obtener_boton_volver())
+                return
+            else:
+                await update.message.reply_text("✅ Movimiento procesado.", reply_markup=obtener_boton_volver())
+                return
 
-        user_id = update.effective_user.id
-        if user_id not in historiales:
-            historiales[user_id] = gemini_client.chats.create(
-                model='gemini-3.6-flash',
-                config=gemini_config,
-            )
-
-        await sync_to_async(connection.close_if_unusable_or_obsolete)()
-        response = await asyncio.wait_for(
-            asyncio.to_thread(
-                historiales[user_id].send_message,
-                texto_usuario,
-                config=gemini_config,
-            ),
-            timeout=35,
-        )
-        if response.text:
-            await update.message.reply_text(response.text, reply_markup=obtener_boton_volver())
-        else:
-            await update.message.reply_text('✅ Movimiento procesado en la base de datos.', reply_markup=obtener_boton_volver())
-        return
-
-    except asyncio.TimeoutError:
-        logger.error('Gemini tardó más de 45 segundos en responder.')
-        await update.message.reply_text('⏳ Gemini está tardando demasiado. Probá de nuevo en unos segundos.')
-    except Exception as e:
-        logger.exception('Error al responder mensaje en Astrana: %s', e)
+        # Respuesta sugerida amigable si no se entendió la consulta
         await update.message.reply_text(
-            'No terminé de entender la consulta. ¿Podés decirme si querés consultar stock, movimientos, trámites o pastillero?',
-            reply_markup=obtener_boton_volver(),
+            "No terminé de entender tu consulta. Podés pedirme:\n"
+            "• Stock de sondas o pastillero\n"
+            "• Cargar o descontar stock\n"
+            "• Reporte de autonomía o movimientos\n"
+            "• Trámites de Obra Social o Backup\n"
+            "• Consultar o registrar tomas de pastillas\n\n"
+            "O abrí el menú interactivo:",
+            reply_markup=obtener_boton_volver()
+        )
+
+    except Exception as e:
+        logger.exception("Error al responder mensaje en Astrana: %s", e)
+        await update.message.reply_text(
+            "Ocurrió un error al procesar tu solicitud. ¿Querés intentar desde el menú?",
+            reply_markup=obtener_boton_volver()
         )
 
 
