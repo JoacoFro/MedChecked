@@ -308,6 +308,8 @@ INTENT_DATASET: Dict[str, List[str]] = {
         'registro de tomas',
         'que pastillas tome esta semana',
         'ultimas tomas registradas',
+        'cuando tengo que tomar ditropan',
+
     ],
     'registrar_toma': [
         'me tome 1 enalapril',
@@ -365,6 +367,9 @@ INTENT_DATASET: Dict[str, List[str]] = {
         'que podes hacer',
         'como me podes ayudar',
         'comandos',
+        'como va',
+        'muchas gracias',
+        'hasta mañana',
     ],
 }
 

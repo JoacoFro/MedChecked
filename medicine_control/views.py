@@ -601,7 +601,8 @@ def astrana_chat_api(request):
 def astrana_vapid_public_key(request):
     """Devuelve la clave pública VAPID para que el navegador se suscriba a Web Push."""
     from Astrana.webpush_utils import obtener_vapid_public_key
-    return JsonResponse({'publicKey': obtener_vapid_public_key()})
+    clave = obtener_vapid_public_key()
+    return JsonResponse({'publicKey': clave, 'public_key': clave})
 
 
 @csrf_exempt
@@ -625,6 +626,26 @@ def astrana_guardar_suscripcion_push(request):
         return JsonResponse({'status': 'success', 'message': 'Suscripción Web Push registrada con éxito.'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def astrana_probar_push_api(request):
+    """Envía una notificación push de prueba inmediata a todos los navegadores/PWA activos."""
+    try:
+        from Astrana.webpush_utils import enviar_webpush_recordatorio
+        enviados = enviar_webpush_recordatorio(
+            titulo="⏰ Alerta de Prueba - Astrana",
+            cuerpo="¡Las notificaciones del pastillero están configuradas y funcionando a la perfección!",
+            datos={"url": "/astrana/", "tipo": "prueba"}
+        )
+        return JsonResponse({
+            'status': 'success',
+            'enviados': enviados,
+            'mensaje': f'Notificación enviada a {enviados} dispositivo(s).' if enviados > 0 else 'No hay dispositivos suscritos todavía.'
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
 
 
 @csrf_exempt

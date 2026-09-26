@@ -268,9 +268,9 @@ def consultar_stock_pastillero():
         if not medicamentos.exists():
             return "No hay medicamentos registrados en el pastillero."
 
-        reporte = "💊 **Stock del Pastillero:**\n"
+        reporte = "💊 Stock del Pastillero:\n"
         for medicamento in medicamentos:
-            reporte += f"• **{medicamento.nombre}**: {medicamento.cantidad_total} pastillas.\n"
+            reporte += f"• {medicamento.nombre}: {medicamento.cantidad_total} pastillas.\n"
         return reporte
     except Exception as e:
         return f"Error al consultar el stock del pastillero: {e}"
@@ -297,7 +297,7 @@ def consultar_ultimos_movimientos_sondas():
         else:
             reporte += "No hay ingresos registrados.\n"
 
-        reporte += "\n📤 **Últimos 10 egresos de Sondas:**\n"
+        reporte += "\n📤 Últimos 10 egresos de Sondas:\n"
         if egresos:
             for egreso in egresos:
                 tipo = 'Stock normal' if egreso.tipo_stock == 'stock_normal' else 'Stock de seguridad'
@@ -320,7 +320,7 @@ def consultar_ultimas_tomas():
         if not tomas:
             return "No hay tomas registradas en el pastillero."
 
-        reporte = "🗓 **Últimas tomas:**\n"
+        reporte = "🗓 Últimas tomas:\n"
         for toma in tomas:
             fecha = timezone.localtime(toma.fecha_hora).strftime('%d/%m/%Y %H:%M')
             reporte += f"• **{toma.medicamento.nombre}**: {toma.cantidad} un. ({fecha})\n"
@@ -637,7 +637,7 @@ def obtener_resumen_pedidos():
         if en_curso:
             for tramite in en_curso:
                 reporte += (
-                    f"• **{tramite.get_tipo_display()}** | "
+                    f"• {tramite.get_tipo_display()} | "
                     f"Estado: {tramite.get_estado_display()} | "
                     f"Cantidad: {tramite.cantidad_pedida} | "
                     f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
@@ -650,7 +650,7 @@ def obtener_resumen_pedidos():
         if cerrados:
             for tramite in cerrados:
                 reporte += (
-                    f"• **{tramite.get_tipo_display()}** | "
+                    f"• {tramite.get_tipo_display()} | "
                     f"Estado: {tramite.get_estado_display()} | "
                     f"Cantidad: {tramite.cantidad_pedida} | "
                     f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "

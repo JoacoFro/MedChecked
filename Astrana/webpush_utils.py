@@ -27,12 +27,14 @@ def obtener_vapid_public_key() -> str:
 
 def guardar_suscripcion_push(chat_id: str, sub_info: Dict[str, Any]) -> MemoriaAstrana:
     """Guarda o actualiza la suscripción Push de un dispositivo en MemoriaAstrana."""
+    import hashlib
     endpoint = sub_info.get('endpoint', '')
     if not endpoint:
         raise ValueError("La suscripción no contiene endpoint válido.")
 
-    # Guardamos con clave única por endpoint o chat_id
-    clave = f"push_sub_{chat_id}"
+    # Guardamos con clave única por dispositivo/endpoint
+    endpoint_hash = hashlib.sha256(endpoint.encode('utf-8')).hexdigest()[:12]
+    clave = f"push_sub_{chat_id}_{endpoint_hash}"
     memoria, _ = MemoriaAstrana.objects.update_or_create(
         chat_id=str(chat_id),
         categoria='contexto',
@@ -43,7 +45,7 @@ def guardar_suscripcion_push(chat_id: str, sub_info: Dict[str, Any]) -> MemoriaA
             'activa': True,
         }
     )
-    logger.info("Suscripción Push guardada para chat_id=%s", chat_id)
+    logger.info("Suscripción Push guardada para chat_id=%s (hash=%s)", chat_id, endpoint_hash)
     return memoria
 
 def enviar_webpush_recordatorio(titulo: str, cuerpo: str, datos: Optional[Dict[str, Any]] = None) -> int:

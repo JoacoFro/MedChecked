@@ -23,7 +23,7 @@
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@300;400;500;600&display=swap');
         
         * { -webkit-tap-highlight-color: transparent; }
-        body { font-family: 'Inter', sans-serif; background-color: #162238; }
+        body { font-family: 'Inter', sans-serif; background-color: #0b132b; }
         
         /* Tipografía estilizada para el branding dorado de Astrana */
         .font-astrana { font-family: 'Cinzel', serif; letter-spacing: 0.12em; }
@@ -69,6 +69,22 @@
                 </p>
             </div>
         </div>
+
+        <!-- Acciones de Alertas y Notificaciones Push -->
+        <div class="flex items-center gap-2">
+            <button id="probarNotifBtn" onclick="probarNotificacionPush()" 
+                    class="hidden text-[11px] px-2 py-1 rounded-xl border border-amber-500/30 text-amber-200 bg-amber-950/30 hover:bg-amber-900/50 transition flex items-center gap-1"
+                    title="Enviar notificación de prueba a este dispositivo">
+                <i class="fa-solid fa-paper-plane text-amber-400"></i>
+                <span class="hidden md:inline">Probar Alerta</span>
+            </button>
+            <button id="notifBtn" onclick="solicitarPermisoNotificaciones()" 
+                    class="text-xs px-2.5 py-1.5 rounded-xl border border-amber-500/30 text-amber-300 bg-amber-950/40 hover:bg-amber-900/60 transition flex items-center gap-1.5" 
+                    title="Estado de notificaciones de pastillas">
+                <i class="fa-regular fa-bell" id="notifIcon"></i>
+                <span id="notifStatusText" class="hidden sm:inline">Recordatorios</span>
+            </button>
+        </div>
     </header>
 
     <!-- Área de Chat -->
@@ -81,7 +97,7 @@
             <div class="bg-[#1c2541]/90 border border-slate-700/70 p-4 rounded-2xl rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-2">
                 <p>Hola Joaco. Soy <strong class="font-astrana text-amber-300">Astrana</strong> ✨</p>
                 <p class="text-slate-300 text-xs leading-relaxed">
-                    Estoy lista para asistirte con insumos, tomas y trámites. Podés preguntarme con tus propias palabras.
+                    Estoy lista para asistirte con insumos, tomas y trámites. Podés preguntarme con tus propias palabras o consultar tus pastillas.
                 </p>
             </div>
         </div>
@@ -123,12 +139,6 @@
     </footer>
 
     <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js', { scope: '/astrana/' })
-                .then(reg => console.log('✅ Astrana PWA lista:', reg.scope))
-                .catch(err => console.error('❌ Error SW:', err));
-        }
-
         const chatContainer = document.getElementById('chatContainer');
         const userInput = document.getElementById('userInput');
         const micBtn = document.getElementById('micBtn');
@@ -137,10 +147,21 @@
         const audioPlayback = document.getElementById('audioPlayback');
         const astranaLogoUrl = "{% url 'astrana_icon' %}";
 
+        // Registro de Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js', { scope: '/astrana/' })
+                .then(async reg => {
+                    console.log('✅ Astrana PWA lista:', reg.scope);
+                    await inicializarPushNotifications(reg);
+                })
+                .catch(err => console.error('❌ Error SW:', err));
+        }
+
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
         let currentAudioBlob = null;
+
         async function toggleAudioRecording() {
             if (!isRecording) {
                 try {
@@ -251,7 +272,7 @@
 
         function appendAstranaMessage(text) {
             const row = document.createElement('div');
-            row.className = 'flex items-start gap-3';
+            row.className = 'flex items-start gap-3 animate-fade-in';
             const avatar = document.createElement('div');
             avatar.className = 'w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]';
             const image = document.createElement('img');
@@ -288,6 +309,225 @@
             const elem = document.getElementById(id);
             if (elem) elem.remove();
         }
+
+        // --- Web Push & Pastillero Helpers ---
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding)
+                .replace(/\-/g, '+')
+                .replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        async function inicializarPushNotifications(reg) {
+            try {
+                if (!('PushManager' in window)) return;
+
+                const notifIcon = document.getElementById('notifIcon');
+                const notifStatusText = document.getElementById('notifStatusText');
+                const probarNotifBtn = document.getElementById('probarNotifBtn');
+
+                if (Notification.permission === 'granted') {
+                    if (notifIcon) notifIcon.className = 'fa-solid fa-bell text-emerald-400';
+                    if (notifStatusText) notifStatusText.textContent = 'Activo';
+                    if (probarNotifBtn) probarNotifBtn.classList.remove('hidden');
+                    await sincronizarSuscripcion(reg);
+                } else if (Notification.permission === 'denied') {
+                    if (notifIcon) notifIcon.className = 'fa-solid fa-bell-slash text-rose-400';
+                    if (notifStatusText) notifStatusText.textContent = 'Silenciado';
+                } else {
+                    if (notifIcon) notifIcon.className = 'fa-regular fa-bell text-amber-300';
+                    if (notifStatusText) notifStatusText.textContent = 'Activar';
+                }
+            } catch (err) {
+                console.error('Error inicializando push:', err);
+            }
+        }
+
+        async function solicitarPermisoNotificaciones() {
+            if (!('Notification' in window)) {
+                alert('Tu navegador o dispositivo no soporta notificaciones Web Push.');
+                return;
+            }
+            try {
+                const permission = await Notification.requestPermission();
+                const notifIcon = document.getElementById('notifIcon');
+                const notifStatusText = document.getElementById('notifStatusText');
+                const probarNotifBtn = document.getElementById('probarNotifBtn');
+
+                if (permission === 'granted') {
+                    const reg = await navigator.serviceWorker.ready;
+                    await sincronizarSuscripcion(reg);
+                    if (notifIcon) notifIcon.className = 'fa-solid fa-bell text-emerald-400';
+                    if (notifStatusText) notifStatusText.textContent = 'Activo';
+                    if (probarNotifBtn) probarNotifBtn.classList.remove('hidden');
+                    appendAstranaMessage('🔔 ¡Notificaciones activadas con éxito! Los recordatorios de pastillas llegarán directo a este dispositivo.');
+                } else {
+                    if (notifIcon) notifIcon.className = 'fa-solid fa-bell-slash text-rose-400';
+                    if (notifStatusText) notifStatusText.textContent = 'Silenciado';
+                }
+            } catch (e) {
+                console.error('Error al solicitar permiso:', e);
+            }
+        }
+
+        async function sincronizarSuscripcion(reg) {
+            try {
+                let sub = await reg.pushManager.getSubscription();
+                if (!sub) {
+                    const res = await fetch('/api/astrana/pwa/vapid-key/');
+                    const data = await res.json();
+                    const claveVapid = data.public_key || data.publicKey;
+                    if (!claveVapid) {
+                        console.error('No se recibió clave VAPID pública.');
+                        return;
+                    }
+
+                    const convertedVapidKey = urlBase64ToUint8Array(claveVapid);
+                    sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: convertedVapidKey
+                    });
+                }
+
+                if (sub) {
+                    await fetch('/api/astrana/pwa/subscribe/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+                        },
+                        body: JSON.stringify({
+                            chat_id: 'principal',
+                            subscription: sub.toJSON()
+                        })
+                    });
+                    console.log('✅ Suscripción Web Push registrada en Astrana.');
+                }
+            } catch (err) {
+                console.error('Error sincronizando suscripción push:', err);
+            }
+        }
+
+        async function probarNotificacionPush() {
+            try {
+                const res = await fetch('/api/astrana/pwa/probar-push/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    appendAstranaMessage(`🚀 ${data.mensaje}`);
+                } else {
+                    appendAstranaMessage(`⚠️ No se pudo enviar la alerta de prueba: ${data.error || 'Error desconocido'}`);
+                }
+            } catch (err) {
+                appendAstranaMessage('⚠️ Error enviando alerta de prueba.');
+            }
+        }
+
+        async function verificarPastilleroHoy() {
+            try {
+                const res = await fetch('/api/astrana/pastillero/estado-hoy/');
+                const data = await res.json();
+                if (data.pendientes && data.pendientes.length > 0) {
+                    mostrarTarjetasPastillero(data.pendientes);
+                }
+            } catch (err) {
+                console.error('Error al consultar pastillero:', err);
+            }
+        }
+
+        function mostrarTarjetasPastillero(pendientes) {
+            for (const med of pendientes) {
+                const cardId = `pastillero-card-${med.id}`;
+                if (document.getElementById(cardId)) continue;
+
+                const card = document.createElement('div');
+                card.id = cardId;
+                card.className = 'flex items-start gap-3 animate-fade-in';
+                card.innerHTML = `
+                    <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
+                        <img src="${astranaLogoUrl}" alt="Astrana" class="w-full h-full object-cover">
+                    </div>
+                    <div class="bg-[#1c2541]/95 border border-amber-500/40 p-4 rounded-2xl rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-3 glow-gold">
+                        <div class="flex items-center justify-between border-b border-amber-500/20 pb-2">
+                            <span class="text-xs uppercase tracking-wider text-amber-300 font-semibold flex items-center gap-1.5">
+                                <i class="fa-solid fa-pills text-amber-400"></i> Recordatorio Diario
+                            </span>
+                            <span class="text-[11px] text-slate-400">Hoy</span>
+                        </div>
+                        <p class="text-sm">
+                            Tenés pendiente tomar <strong class="text-amber-200">${med.nombre}</strong>.
+                            <span class="text-xs text-slate-400 block mt-0.5">Stock restante: ${med.cantidad_total} pastillas</span>
+                        </p>
+                        <div class="flex items-center gap-2 pt-1" id="acciones-${med.id}">
+                            <button onclick="confirmarTomaMedicamento(${med.id}, '${med.nombre}')"
+                                    class="flex-1 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-medium py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-md">
+                                <i class="fa-solid fa-check"></i> Confirmar Toma
+                            </button>
+                        </div>
+                    </div>
+                `;
+                chatContainer.appendChild(card);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }
+
+        async function confirmarTomaMedicamento(medicamentoId, nombre) {
+            const contenedorAcciones = document.getElementById(`acciones-${medicamentoId}`);
+            if (contenedorAcciones) {
+                contenedorAcciones.innerHTML = `
+                    <div class="text-xs text-amber-300 flex items-center gap-2 py-1">
+                        <i class="fa-solid fa-circle-notch animate-spin"></i> Registrando toma en base de datos...
+                    </div>
+                `;
+            }
+
+            try {
+                const res = await fetch('/api/astrana/pastillero/confirmar/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ medicamento_id: medicamentoId })
+                });
+                const data = await res.json();
+
+                if (contenedorAcciones) {
+                    contenedorAcciones.innerHTML = `
+                        <div class="text-xs text-emerald-400 font-medium flex items-center gap-1.5 py-1">
+                            <i class="fa-solid fa-circle-check"></i> Toma registrada exitosamente
+                        </div>
+                    `;
+                }
+
+                if (data.status === 'success') {
+                    appendAstranaMessage(`✅ ¡Excelente Joaco! Registré tu toma de ${data.medicamento || nombre}. Quedan ${data.stock} pastillas en tu pastillero.`);
+                } else {
+                    appendAstranaMessage(`ℹ️ ${data.message}`);
+                }
+            } catch (err) {
+                console.error('Error al confirmar toma:', err);
+                if (contenedorAcciones) {
+                    contenedorAcciones.innerHTML = `
+                        <button onclick="confirmarTomaMedicamento(${medicamentoId}, '${nombre}')"
+                                class="text-xs bg-rose-600 text-white py-1.5 px-3 rounded-xl">
+                            Reintentar
+                        </button>
+                    `;
+                }
+                appendAstranaMessage("No pude registrar la toma. Verificá tu conexión a internet.");
+            }
+        }
+
+        // Consultar estado de tomas al cargar la pantalla
+        document.addEventListener('DOMContentLoaded', () => {
+            verificarPastilleroHoy();
+        });
     </script>
 </body>
 </html>
