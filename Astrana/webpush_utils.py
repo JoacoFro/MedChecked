@@ -3,12 +3,14 @@ import json
 import logging
 import hashlib
 import base64
+import re
 from typing import Dict, Any, Optional
 
 from django.conf import settings
 from medicine_control.models import MemoriaAstrana
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.asymmetric import ec
 
 logger = logging.getLogger(__name__)
 
@@ -18,30 +20,67 @@ VAPID_CLAIMS = {
 }
 
 
+def _limpiar_variable_vapid(valor):
+    valor = (valor or '').strip()
+    if len(valor) >= 2 and valor[0] == valor[-1] and valor[0] in {'"', "'"}:
+        valor = valor[1:-1].strip()
+    return re.sub(r'\\+n', '\n', valor).replace('\r\n', '\n').strip()
+
+
+def _cargar_clave_privada_vapid(valor):
+    """Acepta clave PEM, DER/base64url o escalar base64url de 32 bytes."""
+    valor = _limpiar_variable_vapid(valor)
+    if not valor:
+        raise ValueError('VAPID_PRIVATE_KEY está vacía.')
+
+    try:
+        private_key = serialization.load_pem_private_key(valor.encode('utf-8'), password=None)
+        clave_para_envio = valor
+    except (ValueError, TypeError):
+        try:
+            decoded_key = base64.urlsafe_b64decode(valor + '=' * (-len(valor) % 4))
+            if len(decoded_key) == 32:
+                private_key = ec.derive_private_key(
+                    int.from_bytes(decoded_key, 'big'), ec.SECP256R1()
+                )
+                clave_para_envio = base64.urlsafe_b64encode(decoded_key).decode('ascii').rstrip('=')
+            else:
+                private_key = serialization.load_der_private_key(decoded_key, password=None)
+                clave_para_envio = valor
+        except Exception as error:
+            raise ValueError(
+                'VAPID_PRIVATE_KEY no tiene formato PEM, DER/base64url ni clave VAPID base64url de 32 bytes.'
+            ) from error
+
+    if not isinstance(private_key, ec.EllipticCurvePrivateKey) or private_key.curve.name != 'secp256r1':
+        raise ValueError('VAPID_PRIVATE_KEY debe ser una clave EC P-256 (secp256r1).')
+    return clave_para_envio, private_key
+
+
 def obtener_configuracion_vapid():
     """Carga y valida que la pública y privada VAPID sean el mismo par."""
-    clave_publica = os.getenv('VAPID_PUBLIC_KEY', '').strip()
-    clave_privada = os.getenv('VAPID_PRIVATE_KEY', '').replace('\\n', '\n').strip()
+    clave_publica = _limpiar_variable_vapid(os.getenv('VAPID_PUBLIC_KEY', ''))
+    valor_privado = _limpiar_variable_vapid(os.getenv('VAPID_PRIVATE_KEY', ''))
     faltantes = []
     if not clave_publica:
         faltantes.append('VAPID_PUBLIC_KEY')
-    if not clave_privada:
+    if not valor_privado:
         faltantes.append('VAPID_PRIVATE_KEY')
     if faltantes:
         raise ValueError(f'Faltan variables de entorno: {", ".join(faltantes)}.')
 
     try:
-        llave_privada = serialization.load_pem_private_key(
-            clave_privada.encode('utf-8'), password=None
+        clave_privada, llave_privada = _cargar_clave_privada_vapid(valor_privado)
+        publica_configurada = base64.urlsafe_b64decode(
+            clave_publica + '=' * (-len(clave_publica) % 4)
         )
         publica_derivada = llave_privada.public_key().public_bytes(
             Encoding.X962, PublicFormat.UncompressedPoint
         )
-        publica_configurada = base64.urlsafe_b64decode(
-            clave_publica + '=' * (-len(clave_publica) % 4)
-        )
     except Exception as error:
-        raise ValueError('El formato de las variables VAPID no es válido.') from error
+        if isinstance(error, ValueError) and str(error).startswith('VAPID_PRIVATE_KEY'):
+            raise
+        raise ValueError('El formato de VAPID_PUBLIC_KEY no es válido; debe ser base64url de una clave pública P-256.') from error
 
     if publica_derivada != publica_configurada:
         raise ValueError('VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY no pertenecen al mismo par.')
