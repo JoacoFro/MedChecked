@@ -4,7 +4,6 @@ import logging
 import hashlib
 from typing import Dict, Any, Optional
 
-from pywebpush import webpush, WebPushException
 from django.conf import settings
 from medicine_control.models import MemoriaAstrana
 
@@ -82,14 +81,16 @@ def enviar_webpush_recordatorio(
     payload = json.dumps({
         'title': titulo,
         'body': cuerpo,
-        'icon': '/static/images/astrana-icon-192.png',
-        'badge': '/static/images/astrana-icon-192.png',
+        'icon': '/astrana/icon-192.png',
+        'badge': '/astrana/icon-192.png',
         'data': datos or {},
         'actions': [
             {'action': 'confirmar_toma', 'title': '✅ Confirmar Toma'},
             {'action': 'abrir_astrana', 'title': '✨ Abrir Astrana'}
         ]
     })
+
+    from pywebpush import WebPushException, webpush
 
     enviados = 0
     for sub_memoria in suscripciones:

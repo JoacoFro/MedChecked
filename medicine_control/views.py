@@ -11,7 +11,7 @@ from .telegram_utils import enviar_alerta
 import json
 import requests
 from django.http import JsonResponse
-from .models import Insumo, Envio, Pastillero, TomaPastillero
+from .models import Insumo, Envio, MemoriaAstrana, Pastillero, TomaPastillero
 from django.contrib import messages
 from django.shortcuts import render, redirect
 import os
@@ -445,6 +445,11 @@ def astrana_service_worker(request):
 
 
 def astrana_chat_api(request):
+    if request.method == 'GET':
+        if not request.session.session_key:
+            request.session.create()
+        return JsonResponse({'messages': request.session.get('astrana_chat_history', [])})
+
     if request.method != 'POST':
         return JsonResponse({'error': 'Método no permitido.'}, status=405)
 
@@ -464,9 +469,18 @@ def astrana_chat_api(request):
             request.session.create()
         chat_id = f'web-{request.session.session_key}'
 
+        def respuesta_con_historial(respuesta, status=200):
+            historial = request.session.get('astrana_chat_history', [])
+            historial.extend([
+                {'role': 'user', 'content': texto_usuario},
+                {'role': 'assistant', 'content': str(respuesta)},
+            ])
+            request.session['astrana_chat_history'] = historial[-100:]
+            return JsonResponse({'reply': str(respuesta)}, status=status)
+
         comando_memoria = astrana.procesar_comando_memoria(chat_id, texto_usuario)
         if comando_memoria:
-            return JsonResponse({'reply': comando_memoria})
+            return respuesta_con_historial(comando_memoria)
 
         intencion = astrana.detectar_consulta_con_memoria(chat_id, texto_usuario)
         if not intencion:
@@ -479,7 +493,7 @@ def astrana_chat_api(request):
             entidades = resultado_nlp.entities or {}
 
         if intencion == 'saludo':
-            return JsonResponse({'reply': 'Hola Joaco!, soy Astrana. Puedo ayudarte con stock, sondas, trámites, envíos y pastillero. ¿Qué necesitás?'})
+            return respuesta_con_historial('Hola Joaco, soy Astrana. Puedo ayudarte con stock, sondas, trámites, envíos y pastillero. ¿Qué necesitás?')
         if intencion == 'consultar_stock':
             respuesta = astrana.consultar_estado_stock()
         elif intencion == 'consultar_autonomia':
@@ -591,7 +605,7 @@ def astrana_chat_api(request):
         else:
             respuesta = 'No pude resolver esa consulta con las funciones locales de Astrana. Probá preguntarme por stock, trámites, envíos o pastillero.'
 
-        return JsonResponse({'reply': str(respuesta)})
+        return respuesta_con_historial(respuesta)
     except Exception:
         import logging
         logging.getLogger(__name__).exception('Error procesando mensaje desde la PWA de Astrana.')
@@ -622,26 +636,56 @@ def astrana_guardar_suscripcion_push(request):
         chat_id = f"pwa-{request.session.session_key}"
 
         from Astrana.webpush_utils import guardar_suscripcion_push
-        guardar_suscripcion_push(chat_id, subscription)
-        return JsonResponse({'status': 'success', 'message': 'Suscripción Web Push registrada con éxito.'})
+        memoria = guardar_suscripcion_push(chat_id, subscription)
+        return JsonResponse({
+            'status': 'success',
+            'subscribed': memoria.activa,
+            'message': 'Suscripción Web Push registrada con éxito.',
+        })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
 def astrana_probar_push_api(request):
-    """Envía una notificación push de prueba inmediata a todos los navegadores/PWA activos."""
+    """Envía una notificación de prueba solo al navegador asociado a la sesión."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+
     try:
+        if not request.session.session_key:
+            request.session.create()
+        chat_id = f"pwa-{request.session.session_key}"
+        suscripcion_activa = MemoriaAstrana.objects.filter(
+            chat_id=chat_id,
+            categoria='contexto',
+            clave__startswith='push_sub_',
+            activa=True,
+        ).exists()
+        if not suscripcion_activa:
+            return JsonResponse({
+                'status': 'error',
+                'enviados': 0,
+                'mensaje': 'Este dispositivo todavía no tiene una suscripción Web Push guardada.',
+            }, status=404)
+
         from Astrana.webpush_utils import enviar_webpush_recordatorio
         enviados = enviar_webpush_recordatorio(
             titulo="⏰ Alerta de Prueba - Astrana",
             cuerpo="¡Las notificaciones del pastillero están configuradas y funcionando a la perfección!",
-            datos={"url": "/astrana/", "tipo": "prueba"}
+            datos={"url": "/astrana/", "tipo": "prueba"},
+            chat_id=chat_id,
         )
+        if not enviados:
+            return JsonResponse({
+                'status': 'error',
+                'enviados': 0,
+                'mensaje': 'La suscripción existe, pero el servicio push no pudo entregar la notificación. Revisá las claves VAPID y los logs del servidor.',
+            }, status=502)
         return JsonResponse({
             'status': 'success',
             'enviados': enviados,
-            'mensaje': f'Notificación enviada a {enviados} dispositivo(s).' if enviados > 0 else 'No hay dispositivos suscritos todavía.'
+            'mensaje': 'Notificación enviada a este dispositivo.',
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)

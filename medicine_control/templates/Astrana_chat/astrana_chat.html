@@ -161,6 +161,7 @@
         let audioChunks = [];
         let isRecording = false;
         let currentAudioBlob = null;
+        let pushSyncError = '';
 
         async function toggleAudioRecording() {
             if (!isRecording) {
@@ -333,10 +334,15 @@
                 const probarNotifBtn = document.getElementById('probarNotifBtn');
 
                 if (Notification.permission === 'granted') {
-                    if (notifIcon) notifIcon.className = 'fa-solid fa-bell text-emerald-400';
-                    if (notifStatusText) notifStatusText.textContent = 'Activo';
-                    if (probarNotifBtn) probarNotifBtn.classList.remove('hidden');
-                    await sincronizarSuscripcion(reg);
+                    const suscripcionGuardada = await sincronizarSuscripcion(reg);
+                    if (suscripcionGuardada) {
+                        if (notifIcon) notifIcon.className = 'fa-solid fa-bell text-emerald-400';
+                        if (notifStatusText) notifStatusText.textContent = 'Activo';
+                        if (probarNotifBtn) probarNotifBtn.classList.remove('hidden');
+                    } else {
+                        if (notifIcon) notifIcon.className = 'fa-regular fa-bell text-amber-300';
+                        if (notifStatusText) notifStatusText.textContent = 'Reintentar';
+                    }
                 } else if (Notification.permission === 'denied') {
                     if (notifIcon) notifIcon.className = 'fa-solid fa-bell-slash text-rose-400';
                     if (notifStatusText) notifStatusText.textContent = 'Silenciado';
@@ -375,7 +381,7 @@
                     const reg = await navigator.serviceWorker.ready;
                     const suscripcionGuardada = await sincronizarSuscripcion(reg);
                     if (!suscripcionGuardada) {
-                        throw new Error('No se pudo guardar la suscripción push.');
+                        throw new Error(pushSyncError || 'El servidor no confirmó el guardado de la suscripción.');
                     }
                     if (notifIcon) notifIcon.className = 'fa-solid fa-bell text-emerald-400';
                     if (notifStatusText) notifStatusText.textContent = 'Activo';
@@ -391,12 +397,13 @@
                 }
             } catch (e) {
                 console.error('Error al solicitar permiso:', e);
-                appendAstranaMessage('No pude activar las notificaciones. Revisá tu conexión e intentá nuevamente.');
+                appendAstranaMessage(`No pude activar las notificaciones: ${e.message || 'revisá tu conexión e intentá nuevamente.'}`);
             }
         }
 
         async function sincronizarSuscripcion(reg) {
             try {
+                pushSyncError = '';
                 let sub = await reg.pushManager.getSubscription();
                 if (!sub) {
                     const res = await fetch('/api/astrana/pwa/vapid-key/');
@@ -426,13 +433,17 @@
                             subscription: sub.toJSON()
                         })
                     });
-                    if (!response.ok) throw new Error(`No se pudo guardar la suscripción (${response.status}).`);
+                    const resultado = await response.json();
+                    if (!response.ok || resultado.status !== 'success' || !resultado.subscribed) {
+                        throw new Error(resultado.error || resultado.message || `No se pudo guardar la suscripción (${response.status}).`);
+                    }
                     console.log('✅ Suscripción Web Push registrada en Astrana.');
                     return true;
                 }
-                return false;
+                throw new Error('El navegador no devolvió una suscripción push.');
             } catch (err) {
                 console.error('Error sincronizando suscripción push:', err);
+                pushSyncError = err.message || 'Error desconocido al guardar la suscripción.';
                 return false;
             }
         }
@@ -447,10 +458,10 @@
                     }
                 });
                 const data = await res.json();
-                if (data.status === 'success') {
+                if (res.ok && data.status === 'success') {
                     appendAstranaMessage(`🚀 ${data.mensaje}`);
                 } else {
-                    appendAstranaMessage(`⚠️ No se pudo enviar la alerta de prueba: ${data.error || 'Error desconocido'}`);
+                    appendAstranaMessage(`⚠️ ${data.mensaje || data.error || 'No se pudo enviar la alerta de prueba.'}`);
                 }
             } catch (err) {
                 console.error('Error enviando alerta de prueba:', err);
@@ -469,6 +480,27 @@
                 }
             } catch (err) {
                 console.error('Error al consultar pastillero:', err);
+            }
+        }
+
+        async function restaurarHistorialChat() {
+            try {
+                const response = await fetch('/api/astrana/chat/');
+                if (!response.ok) return;
+                const data = await response.json();
+                if (!Array.isArray(data.messages) || data.messages.length === 0) return;
+
+                const saludoInicial = chatContainer.firstElementChild;
+                if (saludoInicial) saludoInicial.remove();
+                for (const message of data.messages) {
+                    if (message.role === 'user') {
+                        appendUserTextMessage(message.content || '');
+                    } else if (message.role === 'assistant') {
+                        appendAstranaMessage(message.content || '');
+                    }
+                }
+            } catch (err) {
+                console.error('No se pudo recuperar el historial del chat:', err);
             }
         }
 
@@ -555,6 +587,7 @@
 
         // Consultar estado de tomas al cargar la pantalla
         document.addEventListener('DOMContentLoaded', () => {
+            restaurarHistorialChat();
             verificarPastilleroHoy();
         });
     </script>
