@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.urls import reverse
 from unittest.mock import patch
+import base64
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
 
@@ -126,3 +127,25 @@ class AstranaPwaTests(TestCase):
 			loaded_key.public_key().public_numbers(),
 			generated_key.public_key().public_numbers(),
 		)
+
+	def test_vapid_private_key_accepts_hex_and_base64_encoded_pem(self):
+		generated_key = ec.generate_private_key(ec.SECP256R1())
+		raw_key = generated_key.private_numbers().private_value.to_bytes(32, 'big')
+		pem = generated_key.private_bytes(
+			Encoding.PEM,
+			PrivateFormat.PKCS8,
+			NoEncryption(),
+		)
+		values = [
+			raw_key.hex(),
+			'0x' + raw_key.hex(),
+			base64.urlsafe_b64encode(pem).decode('ascii').rstrip('='),
+		]
+
+		for value in values:
+			with self.subTest(format=value[:2]):
+				_, loaded_key = _cargar_clave_privada_vapid(value)
+				self.assertEqual(
+					loaded_key.public_key().public_numbers(),
+					generated_key.public_key().public_numbers(),
+				)

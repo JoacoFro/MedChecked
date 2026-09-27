@@ -29,7 +29,7 @@ def _limpiar_variable_vapid(valor):
 
 
 def _cargar_clave_privada_vapid(valor):
-    """Acepta clave PEM, DER/base64url o escalar base64url de 32 bytes."""
+    """Acepta PEM, DER codificado, escalar hexadecimal o base64url de 32 bytes."""
     valor = _limpiar_variable_vapid(valor)
     if not valor:
         raise ValueError('VAPID_PRIVATE_KEY está vacía.')
@@ -39,18 +39,29 @@ def _cargar_clave_privada_vapid(valor):
         clave_para_envio = valor
     except (ValueError, TypeError):
         try:
-            decoded_key = base64.urlsafe_b64decode(valor + '=' * (-len(valor) % 4))
-            if len(decoded_key) == 32:
+            valor_hex = valor[2:] if valor.lower().startswith('0x') else valor
+            if len(valor_hex) == 64 and re.fullmatch(r'[0-9a-fA-F]{64}', valor_hex):
+                raw_key = bytes.fromhex(valor_hex)
                 private_key = ec.derive_private_key(
-                    int.from_bytes(decoded_key, 'big'), ec.SECP256R1()
+                    int.from_bytes(raw_key, 'big'), ec.SECP256R1()
                 )
-                clave_para_envio = base64.urlsafe_b64encode(decoded_key).decode('ascii').rstrip('=')
+                clave_para_envio = base64.urlsafe_b64encode(raw_key).decode('ascii').rstrip('=')
             else:
-                private_key = serialization.load_der_private_key(decoded_key, password=None)
-                clave_para_envio = valor
+                decoded_key = base64.urlsafe_b64decode(valor + '=' * (-len(valor) % 4))
+                if decoded_key.startswith(b'-----BEGIN '):
+                    private_key = serialization.load_pem_private_key(decoded_key, password=None)
+                    clave_para_envio = decoded_key.decode('utf-8')
+                elif len(decoded_key) == 32:
+                    private_key = ec.derive_private_key(
+                        int.from_bytes(decoded_key, 'big'), ec.SECP256R1()
+                    )
+                    clave_para_envio = base64.urlsafe_b64encode(decoded_key).decode('ascii').rstrip('=')
+                else:
+                    private_key = serialization.load_der_private_key(decoded_key, password=None)
+                    clave_para_envio = valor
         except Exception as error:
             raise ValueError(
-                'VAPID_PRIVATE_KEY no tiene formato PEM, DER/base64url ni clave VAPID base64url de 32 bytes.'
+                'Render no pudo interpretar VAPID_PRIVATE_KEY. Debe contener la clave privada completa en PEM, DER/base64url, hexadecimal de 32 bytes o base64url de 32 bytes; no pegues aquí VAPID_PUBLIC_KEY.'
             ) from error
 
     if not isinstance(private_key, ec.EllipticCurvePrivateKey) or private_key.curve.name != 'secp256r1':
