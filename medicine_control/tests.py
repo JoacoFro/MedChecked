@@ -1,8 +1,11 @@
 from django.test import TestCase
 from django.urls import reverse
 from unittest.mock import patch
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
 
 from medicine_control.models import MemoriaAstrana
+from Astrana.webpush_utils import _cargar_clave_privada_vapid
 
 
 class AstranaPwaTests(TestCase):
@@ -107,3 +110,19 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertTrue(response.json()['public_key'])
 		self.assertEqual(response.json()['public_key'], response.json()['publicKey'])
+
+	def test_vapid_private_key_accepts_quoted_escaped_crlf_pem(self):
+		generated_key = ec.generate_private_key(ec.SECP256R1())
+		pem = generated_key.private_bytes(
+			Encoding.PEM,
+			PrivateFormat.PKCS8,
+			NoEncryption(),
+		).decode('utf-8')
+		render_value = '"' + pem.replace('\n', '\\r\\n') + '"'
+
+		_, loaded_key = _cargar_clave_privada_vapid(render_value)
+
+		self.assertEqual(
+			loaded_key.public_key().public_numbers(),
+			generated_key.public_key().public_numbers(),
+		)

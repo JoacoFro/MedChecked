@@ -24,7 +24,8 @@ def _limpiar_variable_vapid(valor):
     valor = (valor or '').strip()
     if len(valor) >= 2 and valor[0] == valor[-1] and valor[0] in {'"', "'"}:
         valor = valor[1:-1].strip()
-    return re.sub(r'\\+n', '\n', valor).replace('\r\n', '\n').strip()
+    valor = re.sub(r'\\+r?\\+n', '\n', valor)
+    return valor.replace('\r\n', '\n').strip()
 
 
 def _cargar_clave_privada_vapid(valor):
