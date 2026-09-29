@@ -11,7 +11,6 @@ from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
-
 import django
 from django.db import connection, transaction
 from django.utils import timezone

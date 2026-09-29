@@ -16,3 +16,6 @@ __pycache__/
 # Carpetas de VS Code u otros editores
 .vscode/
 .idea/
+
+# Archivo vapid
+generar_vapid.py

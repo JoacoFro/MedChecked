@@ -98,6 +98,14 @@ STATICFILES_DIRS = [BASE_DIR / 'Astrana' / 'static']
 # Configuración de WhiteNoise para almacenamiento optimizado
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# --- SESIONES ---
+# Guardar sesiones en la BD para que persistan entre reinicios de Render.
+# El filesystem efímero de Render borra las sesiones de archivo en cada deploy.
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30   # 30 días
+SESSION_SAVE_EVERY_REQUEST = False
+SESSION_COOKIE_SAMESITE = 'Lax'           # Necesario para que la PWA envíe cookies en navegación
+
 # --- CONFIGURACIÓN DE SEGURIDAD PARA PRODUCCIÓN ---
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
