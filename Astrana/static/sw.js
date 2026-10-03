@@ -1,10 +1,44 @@
 const CACHE_NAME = 'astrana-pwa-v4';
+const FIREBASE_CONFIG = __FIREBASE_CONFIG__;
 const ASSETS = [
   '/astrana/',
   '/manifest.json',
   '/astrana/icon-192.png',
   '/astrana/icon-512.png'
 ];
+
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
+
+if (typeof firebase !== 'undefined' && FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey) {
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
+  } catch (error) {
+    console.error('Firebase service worker init error:', error);
+  }
+}
+
+const messaging = typeof firebase !== 'undefined' && firebase.messaging ? firebase.messaging() : null;
+
+if (messaging) {
+  messaging.onBackgroundMessage((payload) => {
+    const title = payload.notification?.title || '💊 Astrana';
+    const options = {
+      body: payload.notification?.body || 'Tienes un recordatorio de Astrana.',
+      icon: '/astrana/icon-192.png',
+      badge: '/astrana/icon-192.png',
+      data: payload.data || {},
+      requireInteraction: true,
+      actions: [
+        { action: 'abrir_astrana', title: '✨ Abrir Astrana' }
+      ]
+    };
+
+    return self.registration.showNotification(title, options);
+  });
+}
 
 // Instalación del Service Worker
 self.addEventListener('install', (event) => {

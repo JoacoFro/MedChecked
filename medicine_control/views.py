@@ -401,8 +401,102 @@ def pastillero_view(request):
         'envios': envios,
     })
 
+def _obtener_config_firebase_web():
+    return {
+        'apiKey': os.getenv('FIREBASE_API_KEY', ''),
+        'authDomain': os.getenv('FIREBASE_AUTH_DOMAIN', ''),
+        'projectId': os.getenv('FIREBASE_PROJECT_ID', ''),
+        'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', ''),
+        'messagingSenderId': os.getenv('FIREBASE_MESSAGING_SENDER_ID', ''),
+        'appId': os.getenv('FIREBASE_APP_ID', ''),
+        'measurementId': os.getenv('FIREBASE_MEASUREMENT_ID', ''),
+    }
+
+
 def astrana_chat_view(request):
-    return render(request, 'Astrana_chat/astrana_chat.html')
+    firebase_config = _obtener_config_firebase_web()
+    return render(request, 'Astrana_chat/astrana_chat.html', {
+        'firebase_config': json.dumps(firebase_config),
+        'firebase_enabled': bool(firebase_config.get('apiKey') and firebase_config.get('projectId') and firebase_config.get('messagingSenderId') and firebase_config.get('appId')),
+    })
+
+
+def _get_session_chat_id(request):
+    if not request.session.session_key:
+        request.session.create()
+    return f"pwa-{request.session.session_key}"
+
+
+def _inicializar_firebase_admin():
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+    except ImportError as exc:
+        raise RuntimeError('firebase-admin no está instalado en el entorno del deploy.') from exc
+
+    if not firebase_admin._apps:
+        service_account_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON', '').strip()
+        if not service_account_json:
+            raise RuntimeError('FIREBASE_SERVICE_ACCOUNT_JSON no está configurada en Render.')
+        try:
+            parsed = json.loads(service_account_json)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError('FIREBASE_SERVICE_ACCOUNT_JSON no es un JSON válido.') from exc
+        cred = credentials.Certificate(parsed)
+        firebase_admin.initialize_app(cred)
+
+    return firebase_admin.get_app()
+
+
+def guardar_token_fcm(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        token = (data.get('token') or '').strip()
+        if not token:
+            return JsonResponse({'status': 'error', 'error': 'Falta el token FCM.'}, status=400)
+
+        chat_id = _get_session_chat_id(request)
+        MemoriaAstrana.objects.update_or_create(
+            chat_id=chat_id,
+            categoria='contexto',
+            clave='fcm_token',
+            defaults={'valor': token, 'activa': True, 'confirmada': True},
+        )
+        return JsonResponse({'status': 'success', 'message': 'Token FCM guardado correctamente.', 'subscribed': True})
+    except Exception as exc:
+        return JsonResponse({'status': 'error', 'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+def probar_push_fcm(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+
+    try:
+        chat_id = _get_session_chat_id(request)
+        registro = MemoriaAstrana.objects.filter(chat_id=chat_id, categoria='contexto', clave='fcm_token', activa=True).first()
+        if not registro:
+            return JsonResponse({'status': 'error', 'mensaje': 'Este navegador todavía no tiene un token FCM guardado.'}, status=404)
+
+        _inicializar_firebase_admin()
+        from firebase_admin import messaging
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title='⏰ Astrana: prueba de notificación',
+                body='¡Las notificaciones push de Firebase están funcionando correctamente!',
+            ),
+            data={'url': '/astrana/', 'tipo': 'prueba'},
+            token=registro.valor,
+        )
+        messaging.send(message)
+        return JsonResponse({'status': 'success', 'enviados': 1, 'mensaje': 'Notificación de prueba enviada a este dispositivo.'})
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception('No se pudo enviar push por FCM.')
+        return JsonResponse({'status': 'error', 'error': str(exc)}, status=500)
 
 
 def astrana_icon(request):
@@ -437,8 +531,14 @@ def astrana_manifest(request):
 
 
 def astrana_service_worker(request):
-    with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Astrana', 'static', 'sw.js'), 'rb') as service_worker:
-        response = HttpResponse(service_worker.read(), content_type='application/javascript; charset=utf-8')
+    sw_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'Astrana', 'static', 'sw.js')
+    with open(sw_path, 'r', encoding='utf-8') as service_worker:
+        contenido = service_worker.read()
+
+    firebase_cfg = json.dumps(_obtener_config_firebase_web())
+    contenido = contenido.replace('__FIREBASE_CONFIG__', firebase_cfg)
+
+    response = HttpResponse(contenido, content_type='application/javascript; charset=utf-8')
     response['Cache-Control'] = 'no-cache'
     response['Service-Worker-Allowed'] = '/astrana/'
     return response
