@@ -19,6 +19,7 @@ urlpatterns = [
     # Recursos PWA servidos en raíz para habilitar el alcance del service worker.
     path('manifest.json', views.astrana_manifest, name='astrana_manifest'),
     path('sw.js', views.astrana_service_worker, name='astrana_service_worker'),
+    path('firebase-messaging-sw.js', views.firebase_messaging_sw, name='firebase_messaging_sw'),
 
     # Vista principal donde vivirá la interfaz de la PWA de Astrana
     path('astrana/', astrana_chat_view, name='astrana_pwa'),  # Reemplazaremos views.home por la vista del chat de Astrana más adelante

@@ -544,6 +544,16 @@ def astrana_service_worker(request):
     return response
 
 
+def firebase_messaging_sw(request):
+    sw_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'firebase-messaging-sw.js')
+    with open(sw_path, 'r', encoding='utf-8') as service_worker:
+        contenido = service_worker.read()
+
+    response = HttpResponse(contenido, content_type='application/javascript; charset=utf-8')
+    response['Cache-Control'] = 'no-cache'
+    return response
+
+
 def astrana_chat_api(request):
     if request.method == 'GET':
         if not request.session.session_key:

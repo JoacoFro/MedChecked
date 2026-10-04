@@ -162,12 +162,9 @@
 
         // Registro de Service Worker
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js', { scope: '/astrana/' })
+            navigator.serviceWorker.register('/firebase-messaging-sw.js')
                 .then(async reg => {
-                    console.log('✅ Astrana PWA lista:', reg.scope);
-                    if (firebaseMessaging) {
-                        firebaseMessaging.useServiceWorker(reg);
-                    }
+                    console.log('✅ Firebase SW registrado:', reg.scope);
                     await inicializarPushNotifications(reg);
                 })
                 .catch(err => console.error('❌ Error SW:', err));
@@ -341,7 +338,6 @@
                     return;
                 }
 
-                firebaseMessaging.useServiceWorker(reg);
                 if (Notification.permission === 'granted') {
                     const tokenGuardado = await sincronizarFcmToken();
                     if (tokenGuardado) {

@@ -18,4 +18,3 @@ __pycache__/
 .idea/
 
 # Archivo vapid
-firebase-messaging-sw.js
