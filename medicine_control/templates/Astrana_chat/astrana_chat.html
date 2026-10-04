@@ -176,7 +176,7 @@
 
         // Registro de Service Worker
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/firebase-messaging-sw.js')
+            navigator.serviceWorker.register('/astrana/firebase-messaging-sw.js', { scope: '/astrana/' })
                 .then(async reg => {
                     firebaseServiceWorkerRegistration = reg;
                     console.log('✅ Firebase SW registrado:', reg.scope);
