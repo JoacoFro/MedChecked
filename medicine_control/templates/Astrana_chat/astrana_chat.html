@@ -159,6 +159,19 @@
         if (firebaseEnabled && typeof firebase !== 'undefined') {
             firebaseApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
             firebaseMessaging = firebase.messaging(firebaseApp);
+            firebaseMessaging.onMessage(payload => {
+                const notification = payload.notification || payload.data || {};
+                const title = notification.title || 'Astrana';
+                const options = {
+                    body: notification.body || '',
+                    icon: '/astrana/icon-192.png',
+                    data: { url: notification.url || payload.data?.url || '/astrana/' }
+                };
+
+                navigator.serviceWorker.ready
+                    .then(registration => registration.showNotification(title, options))
+                    .catch(error => console.error('No se pudo mostrar la notificación recibida:', error));
+            });
         }
 
         // Registro de Service Worker
