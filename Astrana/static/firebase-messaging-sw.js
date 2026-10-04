@@ -11,6 +11,10 @@ messaging.onBackgroundMessage((payload) => {
   const options = {
     body: notification.body || '',
     icon: '/astrana/icon-192.png',
+    badge: '/astrana/icon-192.png',
+    silent: false,
+    vibrate: [200, 100, 200],
+    requireInteraction: true,
     data: { url: notification.url || payload.data?.url || '/astrana/' }
   };
 

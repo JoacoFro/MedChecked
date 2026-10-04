@@ -9,7 +9,6 @@ from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .telegram_utils import enviar_alerta
 import json
-import requests
 from django.http import JsonResponse
 from .models import Insumo, Envio, MemoriaAstrana, Pastillero, TomaPastillero
 from django.contrib import messages
@@ -260,71 +259,14 @@ def marcar_recibido_home(request):
     return JsonResponse({'status': 'error', 'message': 'Método no permitido'}, status=405)
 
 def cron_monitoreo_sistema(request):
-    # 1. Filtro de seguridad por token en la URL
     token = request.GET.get('token')
     if token != 'ClaveCronmedchecked':
         return JsonResponse({"error": "No autorizado"}, status=403)
 
-    try:  # <--- Atajamos cualquier error interno
-        hoy = timezone.now()
-        es_viernes = (hoy.weekday() == 4)  # 4 representa el Viernes
-        alertas = []
-        
-        # 2. EVALUACIÓN DE STOCK CRÍTICO
-        insumos = Insumo.objects.all()
-        for i in insumos:
-            # Revisá si estos nombres de campos se llaman exactamente así en tu models.py
-            if (i.stock_actual_cajas * 30) <= 30:
-                alertas.append(f"📦 *O.S*: Te queda {i.stock_actual_cajas} caja de {i.nombre} del stock base.")
-            if i.backup_unidades <= 56:
-                alertas.append(f"🛡️ *Seguridad:* {i.nombre} tiene solo {i.backup_unidades} un. de backup.")
-            if i.autonomia_smart <= 10:
-                alertas.append(f"🚨 *Crítico:* {i.nombre} con autonomía de {i.autonomia_smart} días.")
-
-        # 3. CONSTRUCCIÓN DEL MENSAJE SEGÚN LAS REGLAS
-        mensaje_final = ""
-        
-        if alertas:
-            mensaje_final = "⚠️ *Joaco, tengo un ALERTA DE STOCK*\n\n" + "\n".join(alertas)
-        
-        if es_viernes:
-            envio_os_mes = Envio.objects.filter(tipo='os', fecha_solicitud__month=hoy.month).last()
-            txt_tramites = "\n\n📋 *Resumen de Gestión de Trámites:*\n"
-            
-            if not envio_os_mes:
-                txt_tramites += "⚠️ *Atención Joaco:* No iniciaste el trámite de OS este mes.\n"
-            else:
-                txt_tramites += f"✅ *Trámite OS:* {envio_os_mes.get_estado_display()}\n"
-                
-            pendientes = Envio.objects.filter(estado='tramite')
-            if pendientes.exists():
-                txt_tramites += "\n*Trámites en curso:*\n"
-                for e in pendientes:
-                    txt_tramites += f"🔹 {e.tipo.upper()}: Hace {(hoy.date() - e.fecha_solicitud.date()).days} días.\n"
-            
-            mensaje_final += txt_tramites
-
-        # 4. DISPARO DE TELEGRAM (Solo si hay algo que informar)
-        if mensaje_final:
-            BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')  
-            CHAT_ID = "8034926015"
-            
-            if not BOT_TOKEN:
-                return JsonResponse({"error": "Configuración incompleta: Falta TELEGRAM_TOKEN"}, status=500)
-                
-            url_tg = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-            
-            requests.post(url_tg, json={
-                "chat_id": CHAT_ID,
-                "text": mensaje_final,
-                "parse_mode": "Markdown"
-            }, timeout=10)
-            return JsonResponse({"status": "Mensaje enviado a Telegram con éxito."})
-
-        return JsonResponse({"status": "Sin novedades en el frente. No se requería reporte."})
-
+    try:
+        resultado = _procesar_notificaciones_fcm_programadas()
+        return JsonResponse({'status': 'ok', 'canal': 'pwa', **resultado})
     except Exception as e:
-        # Si algo se rompe, en vez de tirar 500 te muestra el error real en pantalla
         return JsonResponse({
             "error": "Error interno en la ejecución del código",
             "detalle_tecnico": str(e)
@@ -446,6 +388,149 @@ def _inicializar_firebase_admin():
         firebase_admin.initialize_app(cred)
 
     return firebase_admin.get_app()
+
+
+def _enviar_push_fcm(token, titulo, cuerpo, url):
+    _inicializar_firebase_admin()
+    from firebase_admin import messaging
+
+    messaging.send(messaging.Message(
+        notification=messaging.Notification(title=titulo, body=cuerpo),
+        data={'url': url},
+        token=token,
+    ))
+
+
+def _tokens_fcm_activos():
+    return MemoriaAstrana.objects.filter(
+        categoria='contexto', clave='fcm_token', activa=True,
+    ).exclude(valor='')
+
+
+def _hora_recordatorio_pastillero(ahora):
+    preferencia = MemoriaAstrana.objects.filter(
+        chat_id='principal',
+        categoria='preferencia',
+        clave='horario_recordatorio_hoy',
+        activa=True,
+    ).first()
+    if preferencia:
+        try:
+            hora, minuto, fecha = preferencia.valor.split(':', 2)
+            if datetime.strptime(fecha, '%Y-%m-%d').date() == ahora.date():
+                hora, minuto = int(hora), int(minuto)
+                if 0 <= hora <= 23 and 0 <= minuto <= 59:
+                    return hora, minuto
+        except (TypeError, ValueError):
+            pass
+    return (11, 0) if ahora.weekday() >= 5 else (7, 15)
+
+
+def _notificar_recordatorios_pastillero(ahora):
+    hora_objetivo = _hora_recordatorio_pastillero(ahora)
+    if (ahora.hour, ahora.minute) < hora_objetivo:
+        return 0
+
+    hoy = ahora.date()
+    hora_enviada = f'{hora_objetivo[0]:02d}:{hora_objetivo[1]:02d}'
+    medicamentos = Pastillero.objects.filter(cantidad_total__gt=0).exclude(
+        estado_diario_fecha=hoy,
+        estado_diario__in=['tomado', 'omitido'],
+    )
+    enviados = 0
+    for medicamento in medicamentos:
+        clave = f'fcm_pastillero_{medicamento.id}_{hoy:%Y%m%d}'
+        for destino in _tokens_fcm_activos():
+            if MemoriaAstrana.objects.filter(
+                chat_id=destino.chat_id,
+                categoria='contexto',
+                clave=clave,
+                activa=True,
+            ).filter(valor=hora_enviada).exists():
+                continue
+            try:
+                _enviar_push_fcm(
+                    destino.valor,
+                    f'💊 Hora de tomar {medicamento.nombre}',
+                    f'Recordá tomar tu medicación y registrarla en el pastillero.',
+                    '/pastillero/',
+                )
+                MemoriaAstrana.objects.update_or_create(
+                    chat_id=destino.chat_id,
+                    categoria='contexto',
+                    clave=clave,
+                    defaults={'valor': hora_enviada, 'activa': True, 'confirmada': True},
+                )
+                enviados += 1
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    'No se pudo enviar el recordatorio FCM del medicamento %s.',
+                    medicamento.id,
+                )
+    return enviados
+
+
+def _notificar_stock_bajo_sondas():
+    enviados = 0
+    destinos = list(_tokens_fcm_activos())
+    for insumo in Insumo.objects.filter(nombre__icontains='sonda'):
+        consumo_diario = insumo.consumo_diario if insumo.consumo_diario > 0 else 8
+        umbral_unidades = consumo_diario * 15
+        clave = f'fcm_stock_sondas_bajo_{insumo.id}'
+        esta_bajo = insumo.unidades_normales <= umbral_unidades
+
+        if not esta_bajo:
+            MemoriaAstrana.objects.filter(
+                categoria='contexto',
+                clave=clave,
+                activa=True,
+            ).update(activa=False)
+            continue
+
+        for destino in destinos:
+            marcador = MemoriaAstrana.objects.filter(
+                chat_id=destino.chat_id,
+                categoria='contexto',
+                clave=clave,
+                activa=True,
+            ).first()
+            if marcador:
+                continue
+
+            dias = int(insumo.unidades_normales // consumo_diario)
+            try:
+                _enviar_push_fcm(
+                    destino.valor,
+                    '📦 Stock bajo de sondas',
+                    f'Quedan {insumo.unidades_normales} sondas de stock normal, aproximadamente {dias} días de autonomía. Conviene iniciar la reposición.',
+                    '/lista/',
+                )
+                MemoriaAstrana.objects.update_or_create(
+                    chat_id=destino.chat_id,
+                    categoria='contexto',
+                    clave=clave,
+                    defaults={
+                        'valor': str(insumo.unidades_normales),
+                        'activa': True,
+                        'confirmada': True,
+                    },
+                )
+                enviados += 1
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    'No se pudo enviar la alerta FCM de stock bajo para el insumo %s.',
+                    insumo.id,
+                )
+    return enviados
+
+
+def _procesar_notificaciones_fcm_programadas(ahora=None):
+    ahora = timezone.localtime(ahora or timezone.now())
+    recordatorios = _notificar_recordatorios_pastillero(ahora)
+    alertas_stock = _notificar_stock_bajo_sondas()
+    return {'recordatorios': recordatorios, 'alertas_stock': alertas_stock}
 
 
 def guardar_token_fcm(request):
@@ -701,7 +786,7 @@ def astrana_chat_api(request):
                     clave='horario_recordatorio_hoy',
                     valor=f"{h}:{m}:{hoy}"
                 )
-                respuesta = f"⏰ Entendido Joaco. Te voy a recordar tomar tus pastillas a las {h:02d}:{m:02d} hs"
+                respuesta = f"⏰ Entendido Joaco. Hoy te voy a recordar tomar tus pastillas a las {h:02d}:{m:02d} hs. Mañana vuelvo al horario habitual."
             else:
                 respuesta = "❓ ¿A qué hora querés que te haga acordar? (Ejemplo: 'A las 14:30' o 'A las 9 hs')"
         elif astrana.gemini_client is not None:

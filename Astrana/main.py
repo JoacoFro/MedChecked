@@ -1418,8 +1418,6 @@ def main():
     application = (
         ApplicationBuilder()
         .token(TELEGRAM_TOKEN)
-        .post_init(iniciar_recordatorios)
-        .post_shutdown(detener_recordatorios)
         .build()
     )
     

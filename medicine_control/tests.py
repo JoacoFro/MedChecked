@@ -1,11 +1,15 @@
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from unittest.mock import patch
 import base64
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
 
-from medicine_control.models import MemoriaAstrana
+from medicine_control import views as medicine_views
+from medicine_control.models import Insumo, MemoriaAstrana, Pastillero
 from Astrana.webpush_utils import _cargar_clave_privada_vapid
 
 
@@ -149,3 +153,90 @@ class AstranaPwaTests(TestCase):
 					loaded_key.public_key().public_numbers(),
 					generated_key.public_key().public_numbers(),
 				)
+
+
+class FcmScheduledNotificationsTests(TestCase):
+	def setUp(self):
+		MemoriaAstrana.objects.create(
+			chat_id='pwa-device-1',
+			categoria='contexto',
+			clave='fcm_token',
+			valor='test-fcm-token',
+			activa=True,
+			confirmada=True,
+		)
+
+	@patch('medicine_control.views._enviar_push_fcm')
+	def test_medication_reminder_waits_for_schedule_and_sends_once_per_day(self, send_push):
+		Pastillero.objects.create(nombre='Medicación diaria', cantidad_total=5)
+		zone = ZoneInfo('America/Argentina/Buenos_Aires')
+
+		before_schedule = datetime(2026, 10, 5, 7, 14, tzinfo=zone)
+		scheduled_time = datetime(2026, 10, 5, 7, 20, tzinfo=zone)
+		self.assertEqual(medicine_views._notificar_recordatorios_pastillero(before_schedule), 0)
+		self.assertEqual(medicine_views._notificar_recordatorios_pastillero(scheduled_time), 1)
+		self.assertEqual(medicine_views._notificar_recordatorios_pastillero(scheduled_time), 0)
+		self.assertEqual(send_push.call_count, 1)
+		self.assertEqual(send_push.call_args.args[0], 'test-fcm-token')
+
+	@patch('medicine_control.views._enviar_push_fcm')
+	def test_pwa_custom_reminder_time_overrides_default_for_today_only(self, send_push):
+		Pastillero.objects.create(nombre='Medicación diaria', cantidad_total=5)
+		MemoriaAstrana.objects.create(
+			chat_id='principal',
+			categoria='preferencia',
+			clave='horario_recordatorio_hoy',
+			valor='14:30:2026-10-05',
+			activa=True,
+			confirmada=True,
+		)
+		zone = ZoneInfo('America/Argentina/Buenos_Aires')
+
+		self.assertEqual(
+			medicine_views._notificar_recordatorios_pastillero(datetime(2026, 10, 5, 7, 20, tzinfo=zone)),
+			0,
+		)
+		self.assertEqual(
+			medicine_views._notificar_recordatorios_pastillero(datetime(2026, 10, 5, 14, 35, tzinfo=zone)),
+			1,
+		)
+		self.assertEqual(
+			medicine_views._notificar_recordatorios_pastillero(datetime(2026, 10, 6, 7, 20, tzinfo=zone)),
+			1,
+		)
+		self.assertEqual(send_push.call_count, 2)
+
+	def test_pwa_chat_saves_custom_reminder_time_for_today(self):
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'recordame a las 14:30'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('hoy', response.json()['reply'].lower())
+		self.assertTrue(MemoriaAstrana.objects.filter(
+			chat_id='principal',
+			categoria='preferencia',
+			clave='horario_recordatorio_hoy',
+			valor__endswith=f':{timezone.localdate()}',
+		).exists())
+
+	@patch('medicine_control.views._enviar_push_fcm')
+	def test_low_normal_stock_alert_sends_once_until_stock_recovers(self, send_push):
+		insumo = Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=4,
+			unidades_por_caja=30,
+			consumo_diario=8,
+		)
+
+		self.assertEqual(medicine_views._notificar_stock_bajo_sondas(), 1)
+		self.assertEqual(medicine_views._notificar_stock_bajo_sondas(), 0)
+		insumo.stock_actual_cajas = 5
+		insumo.save(update_fields=['stock_actual_cajas'])
+		self.assertEqual(medicine_views._notificar_stock_bajo_sondas(), 0)
+		insumo.stock_actual_cajas = 4
+		insumo.save(update_fields=['stock_actual_cajas'])
+		self.assertEqual(medicine_views._notificar_stock_bajo_sondas(), 1)
+		self.assertEqual(send_push.call_count, 2)

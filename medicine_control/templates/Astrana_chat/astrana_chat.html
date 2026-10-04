@@ -165,6 +165,8 @@
                 const options = {
                     body: notification.body || '',
                     icon: '/astrana/icon-192.png',
+                    silent: false,
+                    vibrate: [200, 100, 200],
                     data: { url: notification.url || payload.data?.url || '/astrana/' }
                 };
 
