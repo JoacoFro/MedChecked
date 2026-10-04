@@ -154,6 +154,7 @@
         const firebaseEnabled = JSON.parse(document.getElementById('firebase-enabled').textContent || 'false');
         let firebaseApp = null;
         let firebaseMessaging = null;
+        let firebaseServiceWorkerRegistration = null;
 
         if (firebaseEnabled && typeof firebase !== 'undefined') {
             firebaseApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
@@ -164,6 +165,7 @@
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/firebase-messaging-sw.js')
                 .then(async reg => {
+                    firebaseServiceWorkerRegistration = reg;
                     console.log('✅ Firebase SW registrado:', reg.scope);
                     await inicializarPushNotifications(reg);
                 })
@@ -371,7 +373,10 @@
                     throw new Error('El usuario no concedió el permiso para notificaciones.');
                 }
 
-                const token = await firebaseMessaging.getToken();
+                const serviceWorkerRegistration = firebaseServiceWorkerRegistration || await navigator.serviceWorker.ready;
+                const token = await firebaseMessaging.getToken({
+                    serviceWorkerRegistration
+                });
                 if (!token) {
                     throw new Error('Firebase no devolvió un token para este navegador.');
                 }
