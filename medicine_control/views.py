@@ -545,10 +545,14 @@ def astrana_service_worker(request):
 
 
 def firebase_messaging_sw(request):
-    sw_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'firebase-messaging-sw.js')
+    sw_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        'Astrana', 'static', 'firebase-messaging-sw.js',
+    )
     with open(sw_path, 'r', encoding='utf-8') as service_worker:
         contenido = service_worker.read()
 
+    contenido = contenido.replace('__FIREBASE_CONFIG__', json.dumps(_obtener_config_firebase_web()))
     response = HttpResponse(contenido, content_type='application/javascript; charset=utf-8')
     response['Cache-Control'] = 'no-cache'
     return response
