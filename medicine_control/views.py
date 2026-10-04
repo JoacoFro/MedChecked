@@ -701,7 +701,7 @@ def astrana_chat_api(request):
                     clave='horario_recordatorio_hoy',
                     valor=f"{h}:{m}:{hoy}"
                 )
-                respuesta = f"⏰ Entendido Joaco. Hoy te voy a recordar tomar tus pastillas a las {h:02d}:{m:02d} hs por la PWA."
+                respuesta = f"⏰ Entendido Joaco. Te voy a recordar tomar tus pastillas a las {h:02d}:{m:02d} hs"
             else:
                 respuesta = "❓ ¿A qué hora querés que te haga acordar? (Ejemplo: 'A las 14:30' o 'A las 9 hs')"
         elif astrana.gemini_client is not None:
