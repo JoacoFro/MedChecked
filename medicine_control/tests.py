@@ -4,9 +4,11 @@ from django.utils import timezone
 from unittest.mock import patch
 import base64
 from datetime import datetime
+from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from medicine_control import views as medicine_views
 from medicine_control.models import Insumo, MemoriaAstrana, Pastillero
@@ -240,3 +242,45 @@ class FcmScheduledNotificationsTests(TestCase):
 		insumo.save(update_fields=['stock_actual_cajas'])
 		self.assertEqual(medicine_views._notificar_stock_bajo_sondas(), 1)
 		self.assertEqual(send_push.call_count, 2)
+
+
+class ElevenLabsVoiceTests(TestCase):
+	@patch.dict('os.environ', {
+		'ELEVENLABS_API_KEY': 'test-key',
+		'ELEVENLABS_VOICE_ID': 'mPteaOsPT4FrQ0lJIVEm',
+	})
+	@patch('medicine_control.views.requests.post')
+	def test_tts_endpoint_returns_mp3_from_selected_voice(self, post):
+		post.return_value = Mock(status_code=200, content=b'fake-mp3')
+		response = self.client.post(
+			reverse('astrana_voz_api'),
+			data={'text': 'Hola, soy Astrana.'},
+			content_type='application/json',
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response['Content-Type'], 'audio/mpeg')
+		self.assertEqual(response.content, b'fake-mp3')
+		self.assertIn('/mPteaOsPT4FrQ0lJIVEm', post.call_args.args[0])
+
+	@patch.dict('os.environ', {'ELEVENLABS_API_KEY': 'test-key'})
+	@patch('medicine_control.views.requests.post')
+	def test_voice_note_is_transcribed_then_processed_as_pwa_chat(self, post):
+		post.return_value = Mock(
+			status_code=200,
+			json=lambda: {'text': 'hola'},
+		)
+		audio = SimpleUploadedFile('voice.webm', b'audio-bytes', content_type='audio/webm')
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			data={'audio': audio},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json()['transcription'], 'hola')
+		self.assertIn('Hola Joaco', response.json()['reply'])
+		self.assertEqual(post.call_args.kwargs['data']['model_id'], 'scribe_v2')
+

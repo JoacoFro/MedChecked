@@ -9,6 +9,7 @@ from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .telegram_utils import enviar_alerta
 import json
+import requests
 from django.http import JsonResponse
 from .models import Insumo, Envio, MemoriaAstrana, Pastillero, TomaPastillero
 from django.contrib import messages
@@ -360,6 +361,7 @@ def astrana_chat_view(request):
     return render(request, 'Astrana_chat/astrana_chat.html', {
         'firebase_config': json.dumps(firebase_config),
         'firebase_enabled': bool(firebase_config.get('apiKey') and firebase_config.get('projectId') and firebase_config.get('messagingSenderId') and firebase_config.get('appId')),
+        'elevenlabs_enabled': bool(os.getenv('ELEVENLABS_API_KEY')),
     })
 
 
@@ -533,6 +535,81 @@ def _procesar_notificaciones_fcm_programadas(ahora=None):
     return {'recordatorios': recordatorios, 'alertas_stock': alertas_stock}
 
 
+def _elevenlabs_api_key():
+    api_key = os.getenv('ELEVENLABS_API_KEY', '').strip()
+    if not api_key:
+        raise ValueError('Falta configurar ELEVENLABS_API_KEY en el servidor.')
+    return api_key
+
+
+def _transcribir_audio_elevenlabs(audio_file):
+    api_key = _elevenlabs_api_key()
+    response = requests.post(
+        'https://api.elevenlabs.io/v1/speech-to-text',
+        headers={'xi-api-key': api_key},
+        data={'model_id': 'scribe_v2', 'language_code': 'es'},
+        files={'file': (
+            audio_file.name or 'voice_note.webm',
+            audio_file.read(),
+            audio_file.content_type or 'application/octet-stream',
+        )},
+        timeout=60,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f'ElevenLabs rechazó la transcripción (HTTP {response.status_code}).')
+    texto = response.json().get('text', '').strip()
+    if not texto:
+        raise ValueError('No pude reconocer palabras en el audio. Probá grabarlo otra vez.')
+    return texto
+
+
+def elevenlabs_voz_api(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido.'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+        texto = (data.get('text') or '').strip()
+        if not texto:
+            return JsonResponse({'error': 'Falta el texto para convertir a voz.'}, status=400)
+        if len(texto) > 5000:
+            return JsonResponse({'error': 'El texto supera el máximo de 5000 caracteres.'}, status=400)
+
+        api_key = _elevenlabs_api_key()
+        voice_id = os.getenv('ELEVENLABS_VOICE_ID', 'mPteaOsPT4FrQ0lJIVEm').strip()
+        if not voice_id:
+            return JsonResponse({'error': 'Falta configurar ELEVENLABS_VOICE_ID.'}, status=503)
+
+        response = requests.post(
+            f'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
+            params={'output_format': 'mp3_44100_128'},
+            headers={'xi-api-key': api_key, 'Content-Type': 'application/json'},
+            json={
+                'text': texto,
+                'model_id': 'eleven_multilingual_v2',
+                'voice_settings': {
+                    'stability': 0.5,
+                    'similarity_boost': 0.75,
+                    'style': 0,
+                    'use_speaker_boost': True,
+                },
+            },
+            timeout=60,
+        )
+        if response.status_code >= 400:
+            return JsonResponse(
+                {'error': f'ElevenLabs no pudo generar la voz (HTTP {response.status_code}).'},
+                status=502,
+            )
+        audio_response = HttpResponse(response.content, content_type='audio/mpeg')
+        audio_response['Cache-Control'] = 'no-store'
+        return audio_response
+    except ValueError as error:
+        return JsonResponse({'error': str(error)}, status=503)
+    except requests.RequestException:
+        return JsonResponse({'error': 'No pude conectar con ElevenLabs para generar la voz.'}, status=502)
+
+
 def guardar_token_fcm(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Método no permitido'}, status=405)
@@ -652,12 +729,21 @@ def astrana_chat_api(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Método no permitido.'}, status=405)
 
-    if request.FILES.get('audio'):
-        return JsonResponse({
-            'reply': 'Recibí el audio, pero todavía no está habilitada su transcripción. Por ahora podés escribirme el mensaje.'
-        }, status=501)
+    audio_file = request.FILES.get('audio')
+    transcripcion_usuario = None
+    if audio_file:
+        if audio_file.size > 10 * 1024 * 1024:
+            return JsonResponse({'error': 'El audio no puede superar los 10 MB.'}, status=413)
+        try:
+            transcripcion_usuario = _transcribir_audio_elevenlabs(audio_file)
+        except ValueError as error:
+            return JsonResponse({'error': str(error)}, status=503)
+        except requests.RequestException:
+            return JsonResponse({'error': 'No pude conectar con ElevenLabs para transcribir el audio.'}, status=502)
+        except RuntimeError as error:
+            return JsonResponse({'error': str(error)}, status=502)
 
-    texto_usuario = request.POST.get('message', '').strip()
+    texto_usuario = transcripcion_usuario or request.POST.get('message', '').strip()
     if not texto_usuario:
         return JsonResponse({'error': 'Escribí un mensaje para Astrana.'}, status=400)
 
@@ -675,7 +761,10 @@ def astrana_chat_api(request):
                 {'role': 'assistant', 'content': str(respuesta)},
             ])
             request.session['astrana_chat_history'] = historial[-100:]
-            return JsonResponse({'reply': str(respuesta)}, status=status)
+            payload = {'reply': str(respuesta)}
+            if transcripcion_usuario:
+                payload['transcription'] = transcripcion_usuario
+            return JsonResponse(payload, status=status)
 
         comando_memoria = astrana.procesar_comando_memoria(chat_id, texto_usuario)
         if comando_memoria:
