@@ -1,9 +1,9 @@
 from django.shortcuts import render, redirect
 from .forms import PedidoForm, SalidaStockForm
-from .models import Insumo, Pedido, Salida, Envio
+from .models import IngresoPastillero, Insumo, Pedido, Salida, Envio
 from django.db.models import Sum, Q 
 from datetime import datetime, timedelta
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_time
 from django.utils import timezone
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -331,16 +331,54 @@ def pastillero_view(request):
             except Exception as e:
                 messages.error(request, f"Error al procesar la toma: {str(e)}")
 
+        elif accion == "recargar":
+            medicamento_id = request.POST.get("medicamento")
+            try:
+                cantidad = int(request.POST.get("cantidad", 0))
+                if cantidad <= 0:
+                    raise ValueError("Ingresá una cantidad mayor que cero.")
+                medicamento = Pastillero.objects.get(id=medicamento_id)
+                medicamento.cantidad_total += cantidad
+                medicamento.save(update_fields=['cantidad_total'])
+                IngresoPastillero.objects.create(medicamento=medicamento, cantidad=cantidad)
+                messages.success(
+                    request,
+                    f"Agregué {cantidad} pastillas a {medicamento.nombre}. Quedan {medicamento.cantidad_total}.",
+                )
+            except Pastillero.DoesNotExist:
+                messages.error(request, "El medicamento seleccionado no existe.")
+            except (TypeError, ValueError) as error:
+                messages.error(request, str(error) or "Ingresá una cantidad válida.")
+
+        elif accion == "configurar_horario":
+            medicamento_id = request.POST.get("medicamento")
+            try:
+                medicamento = Pastillero.objects.get(id=medicamento_id)
+                hora_texto = request.POST.get('hora_recordatorio', '').strip()
+                hora = parse_time(hora_texto) if hora_texto else None
+                if hora_texto and hora is None:
+                    raise ValueError("Elegí una hora válida para el recordatorio.")
+                medicamento.hora_recordatorio = hora
+                medicamento.save(update_fields=['hora_recordatorio'])
+                detalle = f"{hora:%H:%M}" if hora else "horario habitual"
+                messages.success(request, f"Horario de {medicamento.nombre} actualizado: {detalle}.")
+            except Pastillero.DoesNotExist:
+                messages.error(request, "El medicamento seleccionado no existe.")
+            except ValueError as error:
+                messages.error(request, str(error))
+
         return redirect('pastillero')
 
     # GET: Cargar datos para el renderizado
     medicamentos = Pastillero.objects.all().order_by('nombre')
     tomas = TomaPastillero.objects.select_related('medicamento').all()[:20]
+    ingresos = IngresoPastillero.objects.select_related('medicamento').all()[:20]
     envios = Envio.objects.all()
 
     return render(request, 'medicine_control/pastillero.html', {
         'medicamentos': medicamentos,
         'tomas': tomas,
+        'ingresos': ingresos,
         'envios': envios,
     })
 
@@ -356,12 +394,23 @@ def _obtener_config_firebase_web():
     }
 
 
+def _obtener_speech_engine_id():
+    memoria = MemoriaAstrana.objects.filter(
+        chat_id='principal',
+        categoria='preferencia',
+        clave='elevenlabs_speech_engine_id',
+        activa=True,
+    ).first()
+    return memoria.valor if memoria else ''
+
+
 def astrana_chat_view(request):
     firebase_config = _obtener_config_firebase_web()
     return render(request, 'Astrana_chat/astrana_chat.html', {
         'firebase_config': json.dumps(firebase_config),
         'firebase_enabled': bool(firebase_config.get('apiKey') and firebase_config.get('projectId') and firebase_config.get('messagingSenderId') and firebase_config.get('appId')),
         'elevenlabs_enabled': bool(os.getenv('ELEVENLABS_API_KEY')),
+        'speech_engine_enabled': bool(_obtener_speech_engine_id()),
     })
 
 
@@ -409,7 +458,7 @@ def _tokens_fcm_activos():
     ).exclude(valor='')
 
 
-def _hora_recordatorio_pastillero(ahora):
+def _hora_recordatorio_pastillero(ahora, medicamento=None):
     preferencia = MemoriaAstrana.objects.filter(
         chat_id='principal',
         categoria='preferencia',
@@ -425,22 +474,23 @@ def _hora_recordatorio_pastillero(ahora):
                     return hora, minuto
         except (TypeError, ValueError):
             pass
+    if medicamento and medicamento.hora_recordatorio:
+        return medicamento.hora_recordatorio.hour, medicamento.hora_recordatorio.minute
     return (11, 0) if ahora.weekday() >= 5 else (7, 15)
 
 
 def _notificar_recordatorios_pastillero(ahora):
-    hora_objetivo = _hora_recordatorio_pastillero(ahora)
-    if (ahora.hour, ahora.minute) < hora_objetivo:
-        return 0
-
     hoy = ahora.date()
-    hora_enviada = f'{hora_objetivo[0]:02d}:{hora_objetivo[1]:02d}'
     medicamentos = Pastillero.objects.filter(cantidad_total__gt=0).exclude(
         estado_diario_fecha=hoy,
         estado_diario__in=['tomado', 'omitido'],
     )
     enviados = 0
     for medicamento in medicamentos:
+        hora_objetivo = _hora_recordatorio_pastillero(ahora, medicamento)
+        if (ahora.hour, ahora.minute) < hora_objetivo:
+            continue
+        hora_enviada = f'{hora_objetivo[0]:02d}:{hora_objetivo[1]:02d}'
         clave = f'fcm_pastillero_{medicamento.id}_{hoy:%Y%m%d}'
         for destino in _tokens_fcm_activos():
             if MemoriaAstrana.objects.filter(
@@ -468,6 +518,53 @@ def _notificar_recordatorios_pastillero(ahora):
                 import logging
                 logging.getLogger(__name__).exception(
                     'No se pudo enviar el recordatorio FCM del medicamento %s.',
+                    medicamento.id,
+                )
+    return enviados
+
+
+def _notificar_stock_bajo_pastillero():
+    umbral = 5
+    destinos = list(_tokens_fcm_activos())
+    enviados = 0
+    for medicamento in Pastillero.objects.all():
+        clave = f'fcm_pastillero_stock_bajo_{medicamento.id}'
+        if medicamento.cantidad_total > umbral:
+            MemoriaAstrana.objects.filter(
+                categoria='contexto', clave=clave, activa=True,
+            ).update(activa=False)
+            continue
+
+        for destino in destinos:
+            if MemoriaAstrana.objects.filter(
+                chat_id=destino.chat_id,
+                categoria='contexto',
+                clave=clave,
+                activa=True,
+            ).exists():
+                continue
+            try:
+                _enviar_push_fcm(
+                    destino.valor,
+                    f'💊 Quedan pocas pastillas de {medicamento.nombre}',
+                    f'Quedan {medicamento.cantidad_total} pastillas. Recargá el pastillero para no quedarte sin medicación.',
+                    '/pastillero/',
+                )
+                MemoriaAstrana.objects.update_or_create(
+                    chat_id=destino.chat_id,
+                    categoria='contexto',
+                    clave=clave,
+                    defaults={
+                        'valor': str(medicamento.cantidad_total),
+                        'activa': True,
+                        'confirmada': True,
+                    },
+                )
+                enviados += 1
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    'No se pudo enviar la alerta de pocas pastillas para el medicamento %s.',
                     medicamento.id,
                 )
     return enviados
@@ -531,8 +628,13 @@ def _notificar_stock_bajo_sondas():
 def _procesar_notificaciones_fcm_programadas(ahora=None):
     ahora = timezone.localtime(ahora or timezone.now())
     recordatorios = _notificar_recordatorios_pastillero(ahora)
+    alertas_pastillero = _notificar_stock_bajo_pastillero()
     alertas_stock = _notificar_stock_bajo_sondas()
-    return {'recordatorios': recordatorios, 'alertas_stock': alertas_stock}
+    return {
+        'recordatorios': recordatorios,
+        'alertas_pastillero': alertas_pastillero,
+        'alertas_stock': alertas_stock,
+    }
 
 
 def _elevenlabs_api_key():
@@ -540,6 +642,34 @@ def _elevenlabs_api_key():
     if not api_key:
         raise ValueError('Falta configurar ELEVENLABS_API_KEY en el servidor.')
     return api_key
+
+
+def astrana_voice_token_api(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido.'}, status=405)
+
+    engine_id = _obtener_speech_engine_id()
+    if not engine_id:
+        return JsonResponse(
+            {'error': 'El servicio de voz todavía está iniciando. Esperá un minuto y volvé a intentar.'},
+            status=503,
+        )
+
+    try:
+        from elevenlabs import ElevenLabs
+
+        client = ElevenLabs(api_key=_elevenlabs_api_key())
+        token = client.conversational_ai.conversations.get_webrtc_token(agent_id=engine_id)
+        return JsonResponse({'token': token.token})
+    except ValueError as error:
+        return JsonResponse({'error': str(error)}, status=503)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('No se pudo crear el token de voz WebRTC.')
+        return JsonResponse(
+            {'error': 'No pude iniciar la sesión de voz con ElevenLabs. Revisá los logs del servicio.'},
+            status=502,
+        )
 
 
 def _transcribir_audio_elevenlabs(audio_file):
@@ -597,10 +727,20 @@ def elevenlabs_voz_api(request):
             timeout=60,
         )
         if response.status_code >= 400:
+            try:
+                detalle = response.json()
+                detalle = detalle.get('detail', detalle.get('message', detalle))
+                if isinstance(detalle, dict):
+                    detalle = detalle.get('message', str(detalle))
+                detalle = str(detalle)[:500]
+            except ValueError:
+                detalle = response.text[:500]
             return JsonResponse(
-                {'error': f'ElevenLabs no pudo generar la voz (HTTP {response.status_code}).'},
+                {'error': f'ElevenLabs respondió HTTP {response.status_code}: {detalle}'},
                 status=502,
             )
+        if not response.content:
+            return JsonResponse({'error': 'ElevenLabs devolvió un audio vacío.'}, status=502)
         audio_response = HttpResponse(response.content, content_type='audio/mpeg')
         audio_response['Cache-Control'] = 'no-store'
         return audio_response
@@ -779,6 +919,48 @@ def astrana_chat_api(request):
             resultado_nlp = astrana.nlp_engine.interpretar(texto_usuario, chat_id=chat_id)
             intencion = resultado_nlp.intent
             entidades = resultado_nlp.entities or {}
+
+        texto_normalizado = astrana.normalizar_texto(texto_usuario)
+        pregunta_horario = (
+            'a que hora' in texto_normalizado
+            or 'horario de' in texto_normalizado
+            or 'que horario' in texto_normalizado
+            or 'horario configurado' in texto_normalizado
+            or 'decime el horario' in texto_normalizado
+            or 'cuando tengo que tomar' in texto_normalizado
+            or 'cuando debo tomar' in texto_normalizado
+        )
+        if pregunta_horario:
+            medicamento = entidades.get('medicamento') or astrana.nlp_engine.buscar_medicamento_fuzzy(
+                texto_usuario,
+                chat_id=chat_id,
+            )
+            if not medicamento:
+                return respuesta_con_historial('¿De qué medicamento querés saber el horario?')
+            hora_recordatorio = medicamento.hora_recordatorio
+            if hora_recordatorio:
+                horario = hora_recordatorio.strftime('%H:%M')
+            else:
+                hoy = timezone.localtime()
+                preferencia = MemoriaAstrana.objects.filter(
+                    chat_id='principal', categoria='preferencia',
+                    clave='horario_recordatorio_hoy', activa=True,
+                ).first()
+                hora_personalizada = None
+                if preferencia:
+                    try:
+                        hora, minuto, fecha = preferencia.valor.split(':', 2)
+                        if datetime.strptime(fecha, '%Y-%m-%d').date() == hoy.date():
+                            hora_personalizada = f'{int(hora):02d}:{int(minuto):02d}'
+                    except (TypeError, ValueError):
+                        pass
+                if hora_personalizada:
+                    horario = f'{hora_personalizada} hoy'
+                else:
+                    horario = '11:00' if hoy.weekday() >= 5 else '07:15'
+            return respuesta_con_historial(
+                f'{medicamento.nombre} tiene el recordatorio configurado para las {horario}.'
+            )
 
         if intencion == 'saludo':
             return respuesta_con_historial('Hola Joaco, soy Astrana. Puedo ayudarte con stock, sondas, trámites, envíos y pastillero. ¿Qué necesitás?')

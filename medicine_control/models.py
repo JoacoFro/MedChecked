@@ -127,6 +127,7 @@ class Pastillero(models.Model):
     fecha_hora = models.DateTimeField(default=timezone.now)
     cantidad = models.IntegerField(default=1, help_text="Cantidad de comprimidos tomados en esta toma")
     cantidad_total = models.IntegerField(default=0, help_text="Total de pastillas disponibles actualmente")
+    hora_recordatorio = models.TimeField(null=True, blank=True, help_text="Hora diaria del recordatorio; vacío usa el horario habitual")
     estado_diario = models.CharField(max_length=10, choices=ESTADOS_DIARIOS, default='pendiente')
     estado_diario_fecha = models.DateField(null=True, blank=True)
 
@@ -151,6 +152,20 @@ class TomaPastillero(models.Model):
 
     def __str__(self):
         return f"{self.medicamento.nombre} - {self.cantidad} un. ({self.fecha_hora.strftime('%d/%m/%Y %H:%M')})"
+
+
+class IngresoPastillero(models.Model):
+    medicamento = models.ForeignKey(Pastillero, on_delete=models.CASCADE, related_name='ingresos_stock')
+    cantidad = models.PositiveIntegerField()
+    fecha_hora = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-fecha_hora']
+        verbose_name = 'Recarga de pastillero'
+        verbose_name_plural = 'Recargas de pastillero'
+
+    def __str__(self):
+        return f"{self.medicamento.nombre} +{self.cantidad} ({self.fecha_hora:%d/%m/%Y %H:%M})"
 
 
 class MemoriaAstrana(models.Model):

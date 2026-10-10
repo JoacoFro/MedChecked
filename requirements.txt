@@ -54,3 +54,4 @@ scikit-learn
 rapidfuzz
 pywebpush
 firebase-admin==6.8.0
+elevenlabs==2.70.0

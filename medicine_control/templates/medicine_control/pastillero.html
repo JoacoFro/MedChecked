@@ -143,6 +143,14 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
                   <p class="text-sm text-slate-400 mt-0.5">
                     Stock disponible: <strong class="text-emerald-400 font-bold text-sm">{{ medicamento.cantidad_total|default:0 }} pastillas</strong>
                   </p>
+                  <p class="text-xs text-blue-300 mt-1">
+                    <i class="fa-regular fa-bell mr-1"></i>Recordatorio:
+                    {% if medicamento.hora_recordatorio %}
+                      {{ medicamento.hora_recordatorio|time:"H:i" }} todos los días
+                    {% else %}
+                      07:15 hábiles / 11:00 fines de semana
+                    {% endif %}
+                  </p>
                 </div>
                 
                 {% if medicamento.cantidad_total <= 5 %}
@@ -175,6 +183,34 @@ body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
                 <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20">
                   <i class="fa-solid fa-check"></i>
                   Registrar Toma
+                </button>
+              </form>
+
+              <form method="POST" action="{% url 'pastillero' %}" class="mt-2 flex items-center gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="recargar">
+                <input type="hidden" name="medicamento" value="{{ medicamento.id }}">
+                <label class="flex items-center border border-slate-700 rounded-xl overflow-hidden bg-slate-900/80">
+                  <span class="text-xs text-slate-400 px-3">+ Stock</span>
+                  <input type="number" name="cantidad" min="1" value="10" required aria-label="Cantidad de pastillas a recargar"
+                         class="w-16 py-2 px-1 text-center bg-transparent border-0 font-bold text-white focus:outline-none">
+                </label>
+                <button type="submit" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white py-2.5 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-box-open"></i>Recargar pastillas
+                </button>
+              </form>
+
+              <form method="POST" action="{% url 'pastillero' %}" class="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-700/60 pt-3">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="configurar_horario">
+                <input type="hidden" name="medicamento" value="{{ medicamento.id }}">
+                <label class="flex-1 min-w-[130px]">
+                  <span class="block text-xs text-slate-400 mb-1">Avisarme todos los días a</span>
+                  <input type="time" name="hora_recordatorio" value="{% if medicamento.hora_recordatorio %}{{ medicamento.hora_recordatorio|time:'H:i' }}{% endif %}"
+                         class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+                </label>
+                <button type="submit" class="bg-slate-700 hover:bg-slate-600 text-slate-100 py-2 px-4 rounded-lg text-sm font-medium transition-colors">
+                  Guardar hora
                 </button>
               </form>
 

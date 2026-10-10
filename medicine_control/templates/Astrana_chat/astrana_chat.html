@@ -23,6 +23,7 @@
     <script id="firebase-config" type="application/json">{{ firebase_config|safe }}</script>
     <script id="firebase-enabled" type="application/json">{{ firebase_enabled|yesno:"true,false" }}</script>
     <script id="elevenlabs-enabled" type="application/json">{{ elevenlabs_enabled|yesno:"true,false" }}</script>
+    <script id="speech-engine-enabled" type="application/json">{{ speech_engine_enabled|yesno:"true,false" }}</script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@300;400;500;600&display=swap');
@@ -111,27 +112,15 @@
     <!-- Barra de Input y Audio -->
     <footer class="bg-[#0b132b] border-t border-slate-800 p-3.5">
         
-        <!-- Previsualización del audio antes de enviar -->
-        <div id="audioPreviewContainer" class="hidden mb-3 p-3 bg-[#1c2541] border border-amber-500/30 rounded-2xl flex items-center justify-between glow-gold">
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-400">
-                    <i class="fa-solid fa-microphone animate-pulse"></i>
-                </div>
-                <audio id="audioPlayback" controls class="h-8 max-w-[210px]"></audio>
-            </div>
-            <button onclick="cancelAudioRecord()" class="text-slate-400 hover:text-rose-400 p-2 transition">
-                <i class="fa-solid fa-trash-can"></i>
-            </button>
-        </div>
+        <p id="voiceStatus" class="hidden mb-2 text-center text-xs text-amber-300" role="status" aria-live="polite"></p>
 
         <form id="chatForm" onsubmit="handleSendMessage(event)" class="flex items-center gap-2">
             {% csrf_token %}
             <input type="text" id="userInput" placeholder="Hablá con Astrana o envía un mensaje de voz..." 
                    class="flex-1 bg-[#1c2541] border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-amber-400/80 transition">
 
-            <!-- Botón de Micrófono / Grabador -->
-            <button type="button" id="micBtn" onclick="toggleAudioRecording()" 
-                    class="w-12 h-12 bg-[#1c2541] hover:bg-[#25325c] text-slate-200 border border-slate-700/80 rounded-2xl flex items-center justify-center transition shrink-0" title="Grabar nota de voz">
+                <button type="button" id="micBtn" onclick="toggleVoiceConversation()" 
+                    class="w-12 h-12 bg-[#1c2541] hover:bg-[#25325c] text-slate-200 border border-slate-700/80 rounded-2xl flex items-center justify-center transition shrink-0" title="Hablar con Astrana en tiempo real" aria-label="Iniciar conversación por voz">
                 <i class="fa-solid fa-microphone text-base" id="micIcon"></i>
             </button>
 
@@ -148,15 +137,17 @@
         const userInput = document.getElementById('userInput');
         const micBtn = document.getElementById('micBtn');
         const micIcon = document.getElementById('micIcon');
-        const audioPreviewContainer = document.getElementById('audioPreviewContainer');
-        const audioPlayback = document.getElementById('audioPlayback');
+        const voiceStatus = document.getElementById('voiceStatus');
         const astranaLogoUrl = "{% url 'astrana_icon' %}";
         const firebaseConfig = JSON.parse(document.getElementById('firebase-config').textContent || '{}');
         const firebaseEnabled = JSON.parse(document.getElementById('firebase-enabled').textContent || 'false');
         const elevenLabsEnabled = JSON.parse(document.getElementById('elevenlabs-enabled').textContent || 'false');
+        const speechEngineEnabled = JSON.parse(document.getElementById('speech-engine-enabled').textContent || 'false');
         let firebaseApp = null;
         let firebaseMessaging = null;
         let firebaseServiceWorkerRegistration = null;
+        let voiceConversation = null;
+        let elevenLabsConversationClass = null;
 
         if (firebaseEnabled && typeof firebase !== 'undefined') {
             firebaseApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
@@ -189,73 +180,107 @@
                 .catch(err => console.error('❌ Error SW:', err));
         }
 
-        let mediaRecorder;
-        let audioChunks = [];
-        let isRecording = false;
-        let currentAudioBlob = null;
         let pushSyncError = '';
 
-        async function toggleAudioRecording() {
-            if (!isRecording) {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
-                    audioChunks = [];
+        function setVoiceStatus(message, active = false) {
+            voiceStatus.textContent = message;
+            voiceStatus.classList.toggle('hidden', !message);
+            voiceStatus.classList.toggle('text-rose-300', !active);
+            voiceStatus.classList.toggle('text-amber-300', active);
+            micBtn.classList.toggle('bg-rose-700', active);
+            micBtn.classList.toggle('text-white', active);
+            micBtn.classList.toggle('recording-pulse', active);
+            micBtn.setAttribute('aria-label', active ? 'Finalizar conversación por voz' : 'Iniciar conversación por voz');
+            micBtn.title = active ? 'Finalizar conversación por voz' : 'Hablar con Astrana en tiempo real';
+            micIcon.className = active ? 'fa-solid fa-phone-slash text-base' : 'fa-solid fa-microphone text-base';
+        }
 
-                    mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
-                    
-                    mediaRecorder.onstop = () => {
-                        currentAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                        audioPlayback.src = URL.createObjectURL(currentAudioBlob);
-                        audioPreviewContainer.classList.remove('hidden');
-                    };
+        async function toggleVoiceConversation() {
+            if (voiceConversation) {
+                const activeConversation = voiceConversation;
+                voiceConversation = null;
+                await activeConversation.endSession();
+                setVoiceStatus('Conversación finalizada.');
+                return;
+            }
+            if (!speechEngineEnabled) {
+                setVoiceStatus('El servicio de voz todavía no está listo. Revisá el deploy del servicio Speech Engine.');
+                return;
+            }
 
-                    mediaRecorder.start();
-                    isRecording = true;
-                    micBtn.classList.add('bg-rose-600', 'text-white', 'recording-pulse');
-                    micBtn.classList.remove('bg-[#1c2541]', 'text-slate-200');
-                    micIcon.className = 'fa-solid fa-square';
-                } catch (err) {
-                    alert('No se pudo acceder al micrófono: ' + err.message);
+            micBtn.disabled = true;
+            setVoiceStatus('Conectando con Astrana...', true);
+            try {
+                const microphonePermission = await navigator.mediaDevices.getUserMedia({ audio: true });
+                microphonePermission.getTracks().forEach(track => track.stop());
+
+                const tokenResponse = await fetch('/api/astrana/voz/token/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+                    }
+                });
+                const tokenData = await tokenResponse.json();
+                if (!tokenResponse.ok) throw new Error(tokenData.error || 'No se pudo autorizar la sesión de voz.');
+
+                if (!elevenLabsConversationClass) {
+                    const sdk = await import('https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.26.0/+esm');
+                    elevenLabsConversationClass = sdk.Conversation;
                 }
-            } else {
-                mediaRecorder.stop();
-                mediaRecorder.stream.getTracks().forEach(track => track.stop());
-                isRecording = false;
-                micBtn.classList.remove('bg-rose-600', 'text-white', 'recording-pulse');
-                micBtn.classList.add('bg-[#1c2541]', 'text-slate-200');
-                micIcon.className = 'fa-solid fa-microphone';
+
+                voiceConversation = await elevenLabsConversationClass.startSession({
+                    conversationToken: tokenData.token,
+                    onConnect: () => setVoiceStatus('Te escucho. Hablá con Astrana.', true),
+                    onDisconnect: () => {
+                        voiceConversation = null;
+                        setVoiceStatus('Conversación finalizada.');
+                    },
+                    onError: error => {
+                        console.error('Error en conversación de voz:', error);
+                        setVoiceStatus(`Error de voz: ${error.message || 'no se pudo mantener la conexión.'}`);
+                    },
+                    onMessage: manejarMensajeDeVoz,
+                });
+            } catch (error) {
+                console.error('No se pudo iniciar la conversación de voz:', error);
+                voiceConversation = null;
+                setVoiceStatus(error.message || 'No pude iniciar la conversación por voz.');
+            } finally {
+                micBtn.disabled = false;
             }
         }
 
-        function cancelAudioRecord() {
-            currentAudioBlob = null;
-            audioPlayback.src = '';
-            audioPreviewContainer.classList.add('hidden');
+        function manejarMensajeDeVoz(evento) {
+            const fuente = evento?.source && typeof evento.source === 'object' ? evento.source : evento;
+            const tipo = fuente?.type || evento?.type;
+            const textoUsuario = fuente?.user_transcription_event?.user_transcript
+                || fuente?.user_transcript_event?.user_transcript;
+            const textoAstrana = fuente?.agent_response_event?.agent_response;
+
+            if (tipo === 'user_transcript' && textoUsuario) {
+                appendUserTextMessage(textoUsuario);
+            } else if (tipo === 'agent_response' && textoAstrana) {
+                appendAstranaMessage(textoAstrana, false, false);
+            }
         }
 
         async function handleSendMessage(e) {
             e.preventDefault();
             const text = userInput.value.trim();
-            const esMensajeDeVoz = Boolean(currentAudioBlob);
+            if (!text) return;
 
-            if (!text && !esMensajeDeVoz) return;
-
-            if (esMensajeDeVoz) {
-                appendUserAudioMessage(URL.createObjectURL(currentAudioBlob));
-            } else {
+            if (voiceConversation) {
+                voiceConversation.sendUserMessage(text);
                 appendUserTextMessage(text);
+                userInput.value = '';
+                return;
             }
+
+            appendUserTextMessage(text);
 
             userInput.value = '';
             const formData = new FormData();
-
-            if (esMensajeDeVoz) {
-                formData.append('audio', currentAudioBlob, 'voice_note.webm');
-                cancelAudioRecord();
-            } else {
-                formData.append('message', text);
-            }
+            formData.append('message', text);
 
             const loadingId = appendLoadingIndicator();
 
@@ -272,10 +297,7 @@
                 removeLoadingIndicator(loadingId);
 
                 if (data.reply) {
-                    if (data.transcription) {
-                        appendUserTextMessage(`Escuché: ${data.transcription}`);
-                    }
-                    appendAstranaMessage(data.reply, esMensajeDeVoz);
+                    appendAstranaMessage(data.reply);
                 } else {
                     appendAstranaMessage(data.error || "No pude procesar el mensaje.");
                 }
@@ -296,18 +318,7 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
-        function appendUserAudioMessage(audioUrl) {
-            const html = `
-                <div class="flex items-start justify-end gap-3">
-                    <div class="bg-gradient-to-tr from-amber-600 to-amber-500 p-2.5 rounded-2xl rounded-tr-none max-w-[85%] shadow-lg glow-gold">
-                        <audio controls src="${audioUrl}" class="h-8 max-w-[210px]"></audio>
-                    </div>
-                </div>`;
-            chatContainer.insertAdjacentHTML('beforeend', html);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-
-        function appendAstranaMessage(text, reproducirAutomaticamente = false) {
+        function appendAstranaMessage(text, reproducirAutomaticamente = false, mostrarControlMp3 = true) {
             const row = document.createElement('div');
             row.className = 'flex items-start gap-3 animate-fade-in';
             const avatar = document.createElement('div');
@@ -323,7 +334,7 @@
             messageText.className = 'block';
             messageText.textContent = text;
             bubble.appendChild(messageText);
-            if (elevenLabsEnabled) {
+            if (elevenLabsEnabled && mostrarControlMp3) {
                 const voiceButton = document.createElement('button');
                 voiceButton.type = 'button';
                 voiceButton.className = 'mt-3 inline-flex items-center gap-2 text-xs text-amber-300 hover:text-amber-200';
@@ -331,6 +342,11 @@
                 voiceButton.innerHTML = '<i class="fa-solid fa-volume-high"></i><span>Escuchar</span>';
                 voiceButton.addEventListener('click', () => reproducirVozAstrana(text, voiceButton));
                 bubble.appendChild(voiceButton);
+                const voiceStatus = document.createElement('span');
+                voiceStatus.className = 'block mt-1 text-xs text-rose-300';
+                voiceStatus.hidden = true;
+                bubble.appendChild(voiceStatus);
+                voiceButton.voiceStatus = voiceStatus;
                 if (reproducirAutomaticamente) {
                     reproducirVozAstrana(text, voiceButton).catch(() => {});
                 }
@@ -348,6 +364,10 @@
             }
 
             button.disabled = true;
+            if (button.voiceStatus) {
+                button.voiceStatus.hidden = true;
+                button.voiceStatus.textContent = '';
+            }
             button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>Generando voz...</span>';
             try {
                 if (!button.dataset.audioUrl) {
@@ -360,10 +380,14 @@
                         body: JSON.stringify({ text })
                     });
                     if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.error || 'No se pudo generar el audio.');
+                        const error = await response.json().catch(() => ({}));
+                        throw new Error(error.error || `El servidor respondió HTTP ${response.status}.`);
                     }
-                    button.dataset.audioUrl = URL.createObjectURL(await response.blob());
+                    const audioBlob = await response.blob();
+                    if (!audioBlob.size || !audioBlob.type.startsWith('audio/')) {
+                        throw new Error('El servidor no devolvió un archivo de audio reproducible.');
+                    }
+                    button.dataset.audioUrl = URL.createObjectURL(audioBlob);
                 }
 
                 button.audioPlayer = new Audio(button.dataset.audioUrl);
@@ -375,7 +399,10 @@
             } catch (error) {
                 console.error('No se pudo reproducir la voz de Astrana:', error);
                 button.innerHTML = '<i class="fa-solid fa-volume-high"></i><span>Escuchar</span>';
-                if (!button.dataset.audioUrl) button.title = error.message;
+                if (button.voiceStatus) {
+                    button.voiceStatus.textContent = `No se pudo reproducir: ${error.message}`;
+                    button.voiceStatus.hidden = false;
+                }
             } finally {
                 button.disabled = false;
             }

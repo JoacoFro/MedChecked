@@ -6,6 +6,7 @@ from .models import (
     HistorialMovimiento,
     Envio,
     Pastillero,
+    IngresoPastillero,
     TomaPastillero,
     MemoriaAstrana,
     AprendizajeAstrana,
@@ -42,6 +43,14 @@ class PastilleroAdmin(admin.ModelAdmin):
 
 @admin.register(TomaPastillero)
 class TomaPastilleroAdmin(admin.ModelAdmin):
+    list_display = ('fecha_hora', 'medicamento', 'cantidad')
+    list_filter = ('fecha_hora',)
+    search_fields = ('medicamento__nombre',)
+    ordering = ('-fecha_hora',)
+
+
+@admin.register(IngresoPastillero)
+class IngresoPastilleroAdmin(admin.ModelAdmin):
     list_display = ('fecha_hora', 'medicamento', 'cantidad')
     list_filter = ('fecha_hora',)
     search_fields = ('medicamento__nombre',)
