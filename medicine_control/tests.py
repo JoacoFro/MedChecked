@@ -337,6 +337,31 @@ class PastilleroManagementTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertIn('08:45', response.json()['reply'])
 
+	def test_pwa_chat_refills_existing_medication_by_name(self):
+		medicamento = Pastillero.objects.create(nombre='Enalapril', cantidad_total=4)
+
+		response = self.client.post(reverse('astrana_chat_api'), {
+			'message': 'recargar Enalapril con 20 pastillas'
+		}, secure=True)
+
+		medicamento.refresh_from_db()
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('24', response.json()['reply'])
+		self.assertEqual(medicamento.cantidad_total, 24)
+		self.assertTrue(IngresoPastillero.objects.filter(medicamento=medicamento, cantidad=20).exists())
+
+	def test_pwa_chat_sets_recurring_time_for_named_medication(self):
+		medicamento = Pastillero.objects.create(nombre='Enalapril', cantidad_total=12)
+
+		response = self.client.post(reverse('astrana_chat_api'), {
+			'message': 'recordame tomar Enalapril todos los días a las 09:30'
+		}, secure=True)
+
+		medicamento.refresh_from_db()
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('todos los días', response.json()['reply'].lower())
+		self.assertEqual(medicamento.hora_recordatorio, time(9, 30))
+
 
 class ElevenLabsVoiceTests(TestCase):
 	@patch.dict('os.environ', {'ELEVENLABS_API_KEY': 'test-key'})

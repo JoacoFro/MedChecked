@@ -1,14 +1,16 @@
 from django.shortcuts import render, redirect
 from .forms import PedidoForm, SalidaStockForm
 from .models import IngresoPastillero, Insumo, Pedido, Salida, Envio
+from django.db import transaction
 from django.db.models import Sum, Q 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from django.utils.dateparse import parse_date, parse_time
 from django.utils import timezone
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .telegram_utils import enviar_alerta
 import json
+import re
 import requests
 from django.http import JsonResponse
 from .models import Insumo, Envio, MemoriaAstrana, Pastillero, TomaPastillero
@@ -637,6 +639,26 @@ def _procesar_notificaciones_fcm_programadas(ahora=None):
     }
 
 
+def _medicamento_pastillero_mencionado(texto):
+    from Astrana.main import normalizar_texto
+
+    texto_normalizado = normalizar_texto(texto)
+    for medicamento in Pastillero.objects.all():
+        if normalizar_texto(medicamento.nombre) in texto_normalizado:
+            return medicamento
+    return None
+
+
+def _cantidad_pastillas_recarga(texto_normalizado):
+    coincidencia = re.search(
+        r'\b(\d+)\s*(?:pastillas?|comprimidos?|tabletas?|unidades?)\b',
+        texto_normalizado,
+    )
+    if not coincidencia:
+        coincidencia = re.search(r'\bcon\s+(\d+)\b', texto_normalizado)
+    return int(coincidencia.group(1)) if coincidencia else None
+
+
 def _elevenlabs_api_key():
     api_key = os.getenv('ELEVENLABS_API_KEY', '').strip()
     if not api_key:
@@ -921,6 +943,31 @@ def astrana_chat_api(request):
             entidades = resultado_nlp.entities or {}
 
         texto_normalizado = astrana.normalizar_texto(texto_usuario)
+        medicamento_en_texto = _medicamento_pastillero_mencionado(texto_usuario)
+        verbos_recarga = {'recargar', 'recarga', 'recargame', 'reponer', 'reponeme', 'agregar', 'agregale', 'sumar', 'sumale'}
+        pide_recarga = bool(set(texto_normalizado.split()) & verbos_recarga)
+
+        if medicamento_en_texto and pide_recarga:
+            cantidad = _cantidad_pastillas_recarga(texto_normalizado)
+            if not cantidad or cantidad <= 0:
+                return respuesta_con_historial(
+                    f'¿Cuántas pastillas querés agregar a {medicamento_en_texto.nombre}?'
+                )
+            with transaction.atomic():
+                medicamento_en_texto = Pastillero.objects.select_for_update().get(
+                    id=medicamento_en_texto.id,
+                )
+                medicamento_en_texto.cantidad_total += cantidad
+                medicamento_en_texto.save(update_fields=['cantidad_total'])
+                IngresoPastillero.objects.create(
+                    medicamento=medicamento_en_texto,
+                    cantidad=cantidad,
+                )
+            return respuesta_con_historial(
+                f'✅ Agregué {cantidad} pastillas a {medicamento_en_texto.nombre}. '
+                f'Ahora quedan {medicamento_en_texto.cantidad_total}.'
+            )
+
         pregunta_horario = (
             'a que hora' in texto_normalizado
             or 'horario de' in texto_normalizado
@@ -1050,14 +1097,22 @@ def astrana_chat_api(request):
                 hora_info = extraer_hora_personalizada(texto_usuario)
             if hora_info:
                 h, m = hora_info
-                hoy = timezone.localdate()
-                astrana.guardar_memoria(
-                    chat_id='principal',
-                    categoria='preferencia',
-                    clave='horario_recordatorio_hoy',
-                    valor=f"{h}:{m}:{hoy}"
-                )
-                respuesta = f"⏰ Entendido Joaco. Hoy te voy a recordar tomar tus pastillas a las {h:02d}:{m:02d} hs. Mañana vuelvo al horario habitual."
+                if medicamento_en_texto:
+                    medicamento_en_texto.hora_recordatorio = time(h, m)
+                    medicamento_en_texto.save(update_fields=['hora_recordatorio'])
+                    respuesta = (
+                        f"⏰ Listo. Todos los días te voy a recordar {medicamento_en_texto.nombre} "
+                        f"a las {h:02d}:{m:02d} hs."
+                    )
+                else:
+                    hoy = timezone.localdate()
+                    astrana.guardar_memoria(
+                        chat_id='principal',
+                        categoria='preferencia',
+                        clave='horario_recordatorio_hoy',
+                        valor=f"{h}:{m}:{hoy}"
+                    )
+                    respuesta = f"⏰ Entendido Joaco. Hoy te voy a recordar tomar tus pastillas a las {h:02d}:{m:02d} hs. Mañana vuelvo al horario habitual."
             else:
                 respuesta = "❓ ¿A qué hora querés que te haga acordar? (Ejemplo: 'A las 14:30' o 'A las 9 hs')"
         elif astrana.gemini_client is not None:
