@@ -1,9 +1,11 @@
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from django.db import IntegrityError, transaction
 from unittest.mock import patch
 import base64
-from datetime import datetime, time
+import json
+from datetime import datetime, time, timedelta
 from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -11,13 +13,48 @@ from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from medicine_control import views as medicine_views
-from medicine_control.models import IngresoPastillero, Insumo, MemoriaAstrana, Pastillero
+from medicine_control.models import Envio, IngresoPastillero, Insumo, MemoriaAstrana, Pastillero, Pedido
 from Astrana.webpush_utils import _cargar_clave_privada_vapid
 
 
 class AstranaPwaTests(TestCase):
 	def setUp(self):
 		self.client.defaults['wsgi.url_scheme'] = 'https'
+
+	def test_home_order_actions_allow_one_open_per_type_and_save_both_receipts(self):
+		for tipo in ('os', 'backup'):
+			response = self.client.post(
+				reverse('iniciar_pedido'),
+				data=json.dumps({'tipo': tipo}),
+				content_type='application/json',
+				secure=True,
+			)
+			self.assertEqual(response.status_code, 200)
+
+		response = self.client.post(
+			reverse('iniciar_pedido'),
+			data=json.dumps({'tipo': 'os'}),
+			content_type='application/json',
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(Envio.objects.filter(estado='tramite').count(), 2)
+
+		for tipo in ('os', 'backup'):
+			response = self.client.post(
+				reverse('marcar_recibido_home'),
+				data=json.dumps({'tipo': tipo}),
+				content_type='application/json',
+				secure=True,
+			)
+			self.assertEqual(response.status_code, 200)
+
+		self.assertEqual(Envio.objects.filter(estado='tramite').count(), 0)
+		self.assertEqual(Envio.objects.filter(estado='recibido').count(), 2)
+		self.assertEqual(
+			set(Envio.objects.filter(estado='recibido').values_list('tipo', flat=True)),
+			{'os', 'backup'},
+		)
 
 	def test_chat_history_is_saved_and_restored_from_session(self):
 		response = self.client.post(
@@ -34,6 +71,228 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(history_response.status_code, 200)
 		self.assertEqual([message['role'] for message in messages], ['user', 'assistant'])
 		self.assertEqual(messages[0]['content'], 'hola astrana')
+
+	def test_pwa_order_flow_requests_type_then_quantity_and_closes_when_received(self):
+		insumo = Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=2,
+			unidades_por_caja=30,
+			backup_unidades=15,
+		)
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'iniciar pedido de sondas'},
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('tipo', response.json()['reply'].lower())
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'obra social'},
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		reply = response.json()['reply'].lower()
+		self.assertIn('sondas', reply)
+		self.assertIn('pedir', reply)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': '300 sondas'},
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('pedido', response.json()['reply'].lower())
+		envio = Envio.objects.get(tipo='os', estado='tramite')
+		self.assertEqual(envio.cantidad_pedida, 300)
+		self.assertEqual(envio.notas, 'PWA: cantidad expresada en unidades')
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'ya recibi el pedido'},
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('recibido', response.json()['reply'].lower())
+		envio.refresh_from_db()
+		insumo.refresh_from_db()
+		self.assertEqual(envio.estado, 'recibido')
+		self.assertEqual(insumo.stock_actual_cajas, 12)
+		self.assertEqual(
+			Pedido.objects.get(lugar_compra='Cierre Trámite Obra Social').cantidad,
+			300,
+		)
+
+	def test_pwa_backup_order_closes_into_safety_stock_when_receipt_type_is_implicit(self):
+		insumo = Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=2,
+			unidades_por_caja=30,
+			backup_unidades=15,
+		)
+		self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'iniciar pedido de sondas'},
+			secure=True,
+		)
+		self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'backup'},
+			secure=True,
+		)
+		self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': '150'},
+			secure=True,
+		)
+		envio = Envio.objects.get(tipo='backup', estado='tramite')
+		self.assertEqual(envio.cantidad_pedida, 150)
+		self.assertIn('unidades', envio.notas)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'ya recibí el pedido'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		envio.refresh_from_db()
+		insumo.refresh_from_db()
+		self.assertEqual(envio.estado, 'recibido')
+		self.assertEqual(insumo.stock_actual_cajas, 2)
+		self.assertEqual(insumo.backup_unidades, 165)
+		pedido = Pedido.objects.get(lugar_compra='Cierre Trámite Backup')
+		self.assertEqual(pedido.tipo_stock, 'seguridad')
+		self.assertEqual(pedido.cantidad, 150)
+
+	def test_only_one_open_order_per_type_and_both_types_are_saved_as_received(self):
+		insumo = Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=2,
+			unidades_por_caja=30,
+			backup_unidades=15,
+		)
+		envio_abierto = Envio.objects.create(
+			tipo='os',
+			estado='tramite',
+			cantidad_pedida=60,
+			notas='PWA: cantidad expresada en unidades',
+		)
+		Envio.objects.filter(pk=envio_abierto.pk).update(
+			fecha_solicitud=timezone.localdate() - timedelta(days=40),
+		)
+
+		for tipo, cantidad in [('obra social', 60), ('backup', 30), ('obra social', 90)]:
+			self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': 'iniciar pedido de sondas'},
+				secure=True,
+			)
+			self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': tipo},
+				secure=True,
+			)
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': str(cantidad)},
+				secure=True,
+			)
+			self.assertEqual(response.status_code, 200)
+
+		self.assertEqual(Envio.objects.filter(tipo='os', estado='tramite').count(), 1)
+		self.assertEqual(Envio.objects.filter(tipo='backup', estado='tramite').count(), 1)
+		self.assertIn(
+			'ya existe un trámite de obra social en curso',
+			response.json()['reply'].lower(),
+		)
+		with self.assertRaises(IntegrityError):
+			with transaction.atomic():
+				Envio.objects.create(tipo='os', estado='tramite', cantidad_pedida=30)
+
+		for mensaje in ('ya recibí el pedido de obra social', 'ya recibí el pedido backup'):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': mensaje},
+				secure=True,
+			)
+			self.assertEqual(response.status_code, 200)
+			self.assertIn('cerrado', response.json()['reply'].lower())
+
+		self.assertEqual(Envio.objects.filter(estado='tramite').count(), 0)
+		self.assertEqual(Envio.objects.filter(estado='recibido').count(), 2)
+		self.assertEqual(
+			set(Envio.objects.filter(estado='recibido').values_list('tipo', flat=True)),
+			{'os', 'backup'},
+		)
+		insumo.refresh_from_db()
+		self.assertEqual(insumo.stock_actual_cajas, 4)
+		self.assertEqual(insumo.backup_unidades, 45)
+		self.assertEqual(
+			Pedido.objects.filter(lugar_compra__startswith='Cierre Trámite').count(),
+			2,
+		)
+
+	def test_pwa_open_order_question_lists_every_open_order_with_details(self):
+		Envio.objects.create(
+			tipo='os',
+			estado='tramite',
+			cantidad_pedida=300,
+			notas='PWA: cantidad expresada en unidades',
+		)
+		Envio.objects.create(
+			tipo='backup',
+			estado='tramite',
+			cantidad_pedida=150,
+			notas='PWA: cantidad expresada en unidades',
+		)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': '¿Hay pedidos abiertos?'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		reply = response.json()['reply'].lower()
+		self.assertIn('obra social', reply)
+		self.assertIn('backup', reply)
+		self.assertIn('300 unidades', reply)
+		self.assertIn('150 unidades', reply)
+		self.assertIn('inicio:', reply)
+		self.assertIn('notas:', reply)
+
+	def test_pwa_asks_which_type_to_close_when_multiple_orders_are_open(self):
+		insumo = Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=1,
+			unidades_por_caja=30,
+			backup_unidades=0,
+		)
+		Envio.objects.create(tipo='os', estado='tramite', cantidad_pedida=60)
+		Envio.objects.create(tipo='backup', estado='tramite', cantidad_pedida=30)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'ya recibí el pedido'},
+			secure=True,
+		)
+		self.assertIn('más de un tipo', response.json()['reply'].lower())
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'backup'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('cerrado', response.json()['reply'].lower())
+		self.assertTrue(Envio.objects.filter(tipo='os', estado='tramite').exists())
+		self.assertTrue(Envio.objects.filter(tipo='backup', estado='recibido').exists())
+		insumo.refresh_from_db()
+		self.assertEqual(insumo.stock_actual_cajas, 1)
+		self.assertEqual(insumo.backup_unidades, 30)
 
 	def test_push_subscription_is_saved_for_this_pwa_session(self):
 		subscription = {
@@ -448,4 +707,3 @@ class ElevenLabsVoiceTests(TestCase):
 		self.assertEqual(response.json()['transcription'], 'hola')
 		self.assertIn('Hola Joaco', response.json()['reply'])
 		self.assertEqual(post.call_args.kwargs['data']['model_id'], 'scribe_v2')
-

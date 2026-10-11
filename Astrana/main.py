@@ -1,20 +1,15 @@
 import os
 import sys
-import asyncio
-import threading
 import logging
 import json
 import re
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 import django
-from django.db import connection, transaction
+from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
-from asgiref.sync import sync_to_async
 
 # --- 1. PUENTE Y CONFIGURACIÓN CON DJANGO ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -35,7 +30,7 @@ from medicine_control.models import (
     MemoriaAstrana,
     AprendizajeAstrana,
 )
-from Astrana.nlp_engine import nlp_engine, NLPResult
+from Astrana.nlp_engine import nlp_engine
 try:
     from google import genai
     from google.genai import types
@@ -43,35 +38,11 @@ except ImportError:
     genai = None
     types = None
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    CallbackQueryHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
-
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
-
-# --- 2. SERVIDOR DUMMY HTTP PARA RENDER ---
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Astrana Bot Activo y Saludable")
-
-#-- def run_dummy_server():
- #--   port = int(os.environ.get("PORT", 10000))
-  #--  server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
- #--   server.serve_forever(
-
-#-- threading.Thread(target=run_dummy_server, daemon=True).start() 
 
 # --- 3. FUNCIONES DE LÓGICA / HERRAMIENTAS DJANGO ---
 
@@ -507,7 +478,11 @@ def registrar_movimiento(nombre_insumo: str, accion: str, cantidad: int, tipo_st
     except Exception as e:
         return f"❌ Error técnico: {str(e)}"
 
-def iniciar_tramite_pedido(tipo_tramite: str, cantidad: int = None):
+def iniciar_tramite_pedido(
+    tipo_tramite: str,
+    cantidad: int = None,
+    cantidad_en_unidades: bool = False,
+):
     """
     Inicia un trámite mensual ('os' o 'backup') y registra la cantidad pedida.
     """
@@ -527,28 +502,29 @@ def iniciar_tramite_pedido(tipo_tramite: str, cantidad: int = None):
         if cantidad is None or cantidad <= 0:
             return f"❓ ¿Cuántas cajas o unidades vas a solicitar para el trámite de {nombre_legible}?"
             
-        hoy = timezone.now()
-        tramite_existente = Envio.objects.filter(
-            tipo=tipo_final, 
-            estado='tramite',
-            fecha_solicitud__month=hoy.month,
-            fecha_solicitud__year=hoy.year
-        ).exists()
-        
-        if tramite_existente:
-            return f"⚠️ ATENCIÓN: Ya existe un trámite de {nombre_legible} en curso para este mes."
-            
-        nuevo_envio = Envio.objects.create(
-            tipo=tipo_final,
-            estado='tramite',
-            cantidad_pedida=cantidad
-        )
-        return f"📋 ¡Trámite de {nombre_legible} Iniciado! Registrado con una solicitud de {cantidad} cajas/unidades."
+        with transaction.atomic():
+            tramite_existente = Envio.objects.filter(
+                tipo=tipo_final,
+                estado='tramite',
+            ).exists()
+            if tramite_existente:
+                return f"⚠️ ATENCIÓN: Ya existe un trámite de {nombre_legible} en curso."
 
+            Envio.objects.create(
+                tipo=tipo_final,
+                estado='tramite',
+                cantidad_pedida=cantidad,
+                notas='PWA: cantidad expresada en unidades' if cantidad_en_unidades else '',
+            )
+        unidad = 'unidades' if cantidad_en_unidades else 'cajas/unidades'
+        return f"📋 ¡Trámite de {nombre_legible} iniciado! Registrado en Envíos con una solicitud de {cantidad} {unidad}."
+
+    except IntegrityError:
+        return f"⚠️ ATENCIÓN: Ya existe un trámite de {nombre_legible} en curso."
     except Exception as e:
         return f"❌ Error técnico al iniciar trámite: {str(e)}"
 
-def cerrar_tramite_pedido(tipo_tramite: str, tipo_stock: str = "cajas"):
+def cerrar_tramite_pedido(tipo_tramite: str, tipo_stock: str = None):
     """
     Cierra un trámite activo pasándolo a 'recibido' e impacta el stock.
     """
@@ -567,97 +543,128 @@ def cerrar_tramite_pedido(tipo_tramite: str, tipo_stock: str = "cajas"):
         else:
             return f"❌ ERROR: Tipo de trámite '{tipo_tramite}' no reconocido."
             
-        tramite = Envio.objects.filter(tipo=tipo_final, estado='tramite').last()
-        if not tramite:
-            return f"⚠️ No encontré ningún trámite activo de {nombre_legible} en curso para cerrar."
-            
-        cantidad = tramite.cantidad_pedida
-        ahora = timezone.now()
-        
-        tramite.estado = 'recibido'
-        tramite.fecha_cierre = ahora.date()
-        tramite.save()
+        with transaction.atomic():
+            tramite = Envio.objects.select_for_update().filter(
+                tipo=tipo_final,
+                estado='tramite',
+            ).order_by('-fecha_solicitud', '-id').first()
+            if not tramite:
+                return f"⚠️ No encontré ningún trámite activo de {nombre_legible} en curso para cerrar."
 
-        dias_demora = (tramite.fecha_cierre - tramite.fecha_solicitud).days
-        resultado_msg = f"📋 ¡Trámite de {nombre_legible} cerrado con éxito! Estado: 'Recibido'. Joaco el tramite {dias_demora}"
+            cantidad = tramite.cantidad_pedida
+            if not cantidad or cantidad <= 0:
+                return "⚠️ El trámite no tiene una cantidad válida; sigue abierto y no se modificó el stock."
 
-        if cantidad and cantidad > 0:
-            insumo = Insumo.objects.filter(nombre__icontains=insumo_defecto).first()
+            insumo = Insumo.objects.select_for_update().filter(
+                nombre__icontains=insumo_defecto,
+            ).first()
             if not insumo:
-                return resultado_msg + f" ⚠️ Trámite cerrado, pero no encontré el insumo '{insumo_defecto}' para actualizar stock."
-            
-            if tipo_stock in ["stock_normal", "cajas", "principal", "normal"]:
-                insumo.stock_actual_cajas += cantidad
-                Pedido.objects.create(
-                    insumo=insumo,
-                    tipo=tipo_final,
-                    tipo_stock='stock_normal',
-                    cantidad=cantidad,
-                    fecha=ahora.date(),
-                    lugar_compra=f"Cierre Trámite {nombre_legible}"
+                return (
+                    f"⚠️ No encontré el insumo '{insumo_defecto}'. "
+                    "El trámite sigue abierto y el stock no se modificó."
                 )
-                detalle_stock = f"Se sumaron {cantidad} cajas al Stock Normal."
+
+            es_backup = tipo_final == 'backup'
+            cantidad_en_unidades = tramite.notas == 'PWA: cantidad expresada en unidades'
+            if es_backup:
+                destino_stock = 'seguridad'
+            elif tipo_stock is None and cantidad_en_unidades:
+                destino_stock = 'stock_normal'
+            else:
+                destino_stock = (
+                    'stock_normal'
+                    if tipo_stock in [None, 'stock_normal', 'cajas', 'principal', 'normal']
+                    else 'seguridad'
+                )
+
+            if destino_stock == 'stock_normal':
+                if cantidad_en_unidades:
+                    if cantidad % insumo.unidades_por_caja:
+                        return (
+                            f"⚠️ La cantidad de Obra Social debe ser múltiplo de "
+                            f"{insumo.unidades_por_caja} unidades para registrarla en cajas. "
+                            "El trámite sigue abierto y el stock no se modificó."
+                        )
+                    cajas = cantidad // insumo.unidades_por_caja
+                else:
+                    cajas = cantidad
+                insumo.stock_actual_cajas += cajas
+                detalle_stock = (
+                    f"Se sumaron {cantidad} sondas ({cajas} cajas) al Stock Normal."
+                    if cantidad_en_unidades
+                    else f"Se sumaron {cajas} cajas al Stock Normal."
+                )
             else:
                 insumo.backup_unidades += cantidad
-                Pedido.objects.create(
-                    insumo=insumo,
-                    tipo=tipo_final,
-                    tipo_stock='seguridad',
-                    cantidad=cantidad,
-                    fecha=ahora.date(),
-                    lugar_compra=f"Cierre Trámite {nombre_legible}"
-                )
                 detalle_stock = f"Se sumaron {cantidad} unidades al Stock de Seguridad."
-                
+
+            ahora = timezone.now()
+            tramite.estado = 'recibido'
+            tramite.fecha_cierre = ahora.date()
+            tramite.save(update_fields=['estado', 'fecha_cierre'])
+            Pedido.objects.create(
+                insumo=insumo,
+                tipo=tipo_final,
+                tipo_stock=destino_stock,
+                cantidad=cantidad,
+                fecha=ahora.date(),
+                lugar_compra=f"Cierre Trámite {nombre_legible}",
+            )
             insumo.save()
             insumo.refresh_from_db()
-            resultado_msg += f"\n📦 ¡Base de datos actualizada! {detalle_stock}\nNuevo total real disponible: {insumo.total_unidades_reales} un."
-        else:
-            resultado_msg += f"\n⚠️ El trámite se cerró, pero no tenía cantidad pedida registrada."
-
-        return resultado_msg
+            dias_demora = (tramite.fecha_cierre - tramite.fecha_solicitud).days
+            return (
+                f"📋 ¡Trámite de {nombre_legible} cerrado con éxito y registrado como recibido "
+                f"en Envíos! Demora: {dias_demora} días.\n📦 {detalle_stock}\n"
+                f"Nuevo total real disponible: {insumo.total_unidades_reales} sondas."
+            )
 
     except Exception as e:
         return f"❌ Error técnico al procesar el cierre: {str(e)}"
 
 def obtener_resumen_pedidos():
-    """Consulta trámites en curso y los 10 cerrados más recientes."""
+    """Consulta trámites en curso y los 10 cerrados más recientes con toda la info."""
     try:
         connection.close_if_unusable_or_obsolete()
         en_curso = Envio.objects.filter(
             estado='tramite'
-        ).order_by('-fecha_solicitud', '-id')[:10]
+        ).order_by('-fecha_solicitud', '-id')
         cerrados = Envio.objects.filter(
             estado='recibido',
             fecha_cierre__isnull=False,
         ).order_by('-fecha_cierre', '-id')[:10]
 
-        reporte = "📋 **Trámites en curso:**\n"
+        # --- PEDIDOS ABIERTOS ---
         if en_curso:
+            reporte = f"📋 **Pedidos abiertos ({en_curso.count()}):**\n"
             for tramite in en_curso:
+                tipo_legible = '🔄 Backup / Propio' if tramite.tipo == 'backup' else '🏥 Obra Social'
+                cantidad_en_unidades = tramite.notas == 'PWA: cantidad expresada en unidades'
+                unidad = 'unidades' if cantidad_en_unidades else 'cajas'
+                dias_en_tramite = tramite.demora_real
                 reporte += (
-                    f"• {tramite.get_tipo_display()} | "
-                    f"Estado: {tramite.get_estado_display()} | "
-                    f"Cantidad: {tramite.cantidad_pedida} | "
-                    f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
-                    f"Demora: {tramite.demora_real} días\n"
+                    f"\n▸ **Tipo:** {tipo_legible}\n"
+                    f"  **Cantidad pedida:** {tramite.cantidad_pedida} {unidad}\n"
+                    f"  **Fecha inicio:** {tramite.fecha_solicitud:%d/%m/%Y}\n"
+                    f"  **Días en trámite:** {dias_en_tramite} días\n"
+                    f"  **Notas:** {tramite.notas or '—'}\n"
                 )
         else:
-            reporte += "No hay trámites en curso.\n"
+            reporte = "📋 **Pedidos abiertos:** Ninguno en curso.\n"
 
-        reporte += "\n✅ **Trámites cerrados recientemente:**\n"
+        # --- ÚLTIMOS CERRADOS ---
+        reporte += "\n✅ **Últimos trámites cerrados:**\n"
         if cerrados:
             for tramite in cerrados:
+                tipo_legible = '🔄 Backup / Propio' if tramite.tipo == 'backup' else '🏥 Obra Social'
                 reporte += (
-                    f"• {tramite.get_tipo_display()} | "
-                    f"Estado: {tramite.get_estado_display()} | "
-                    f"Cantidad: {tramite.cantidad_pedida} | "
-                    f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
-                    f"Cierre: {tramite.fecha_cierre:%d/%m/%Y} | "
-                    f"Demora: {tramite.demora_real} días\n"
+                    f"\n▸ **Tipo:** {tipo_legible}\n"
+                    f"  **Cantidad:** {tramite.cantidad_pedida}\n"
+                    f"  **Inicio → Cierre:** {tramite.fecha_solicitud:%d/%m/%Y} → {tramite.fecha_cierre:%d/%m/%Y}\n"
+                    f"  **Demora:** {tramite.demora_real} días\n"
                 )
         else:
-            reporte += "No hay trámites cerrados recientemente.\n"
+            reporte += "Sin trámites cerrados registrados.\n"
 
         return reporte
     except Exception as e:
@@ -692,10 +699,6 @@ def consultar_ultimos_tramites():
 
 # --- 4. CONFIGURACIÓN DE GEMINI Y BOT ---
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-BOT_TIME_ZONE = ZoneInfo('America/Argentina/Buenos_Aires')
-recordatorio_tasks = {}
 
 
 def _estado_pastillero(medicamento_id):
@@ -752,92 +755,6 @@ def omitir_medicamento_hoy(medicamento_id):
             medicamento.save(update_fields=['estado_diario', 'estado_diario_fecha'])
         return medicamento
 
-
-async def enviar_recordatorio(application, medicamento_id):
-    if not TELEGRAM_CHAT_ID:
-        return
-    medicamento = await sync_to_async(_estado_pastillero)(medicamento_id)
-    if medicamento.estado_diario != 'pendiente' or medicamento.cantidad_total <= 0:
-        return
-    botones = InlineKeyboardMarkup([
-        [InlineKeyboardButton('✅ Confirmar Toma', callback_data=f'tomar_medicamento:{medicamento_id}')],
-        [InlineKeyboardButton('🙈 Olvidar por hoy', callback_data=f'ignorar_medicamento:{medicamento_id}')],
-    ])
-    await application.bot.send_message(
-        chat_id=TELEGRAM_CHAT_ID,
-        text=f'💊 ¿Tomaste {medicamento.nombre}?',
-        reply_markup=botones,
-    )
-
-
-async def reintentar_recordatorio(application, medicamento_id):
-    try:
-        await enviar_recordatorio(application, medicamento_id)
-        while True:
-            await asyncio.sleep(3600)
-            pendiente = await sync_to_async(medicamentos_pendientes_ids)()
-            if medicamento_id not in pendiente:
-                return
-            await enviar_recordatorio(application, medicamento_id)
-    except asyncio.CancelledError:
-        return
-    except Exception as error:
-        print(f'Error en recordatorio del medicamento {medicamento_id}: {error}')
-    finally:
-        recordatorio_tasks.pop(medicamento_id, None)
-
-
-async def enviar_recordatorios_del_dia(application):
-    for medicamento_id in await sync_to_async(medicamentos_pendientes_ids)():
-        tarea_anterior = recordatorio_tasks.get(medicamento_id)
-        if tarea_anterior and not tarea_anterior.done():
-            continue
-        recordatorio_tasks[medicamento_id] = asyncio.create_task(
-            reintentar_recordatorio(application, medicamento_id)
-        )
-
-
-def proxima_hora_recordatorio():
-    ahora = datetime.now(BOT_TIME_ZONE)
-    for dias in range(8):
-        fecha = ahora.date() + timedelta(days=dias)
-        hora = (11, 0) if fecha.weekday() >= 5 else (7, 15)
-        candidato = datetime(
-            fecha.year,
-            fecha.month,
-            fecha.day,
-            hora[0],
-            hora[1],
-            tzinfo=BOT_TIME_ZONE,
-        )
-        if candidato > ahora:
-            return candidato
-    raise RuntimeError('No se pudo calcular el próximo horario del pastillero')
-
-
-async def programador_recordatorios(application):
-    try:
-        while True:
-            siguiente = proxima_hora_recordatorio()
-            espera = max(1, (siguiente - datetime.now(BOT_TIME_ZONE)).total_seconds())
-            await asyncio.sleep(espera)
-            await enviar_recordatorios_del_dia(application)
-    except asyncio.CancelledError:
-        return
-
-
-async def iniciar_recordatorios(application):
-    application.bot_data['programador_recordatorios'] = asyncio.create_task(
-        programador_recordatorios(application)
-    )
-
-
-async def detener_recordatorios(application):
-    tarea = application.bot_data.get('programador_recordatorios')
-    if tarea:
-        tarea.cancel()
-    for tarea in list(recordatorio_tasks.values()):
-        tarea.cancel()
 
 gemini_client = None
 gemini_config = None
@@ -966,468 +883,3 @@ def clasificar_intencion(texto_usuario):
     if intencion in {'movimientos_sondas', 'movimientos_tramites'}:
         return intencion
     return 'otro'
-
-# --- 5. MENÚS MULTINIVEL (ÁRBOLES DE NAVEGACIÓN) ---
-
-async def mostrar_menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE, saludo: str = "Hola Joaco, ¿cómo te ayudo?"):
-    keyboard = [
-        [InlineKeyboardButton("📦 Stock", callback_data="menu_stock")],
-        [InlineKeyboardButton("💊 Pastillero", callback_data="menu_pastillero")],
-        [InlineKeyboardButton("📋 Trámites", callback_data="menu_tramites")],
-        [InlineKeyboardButton("💬 Hablar libremente con Astrana", callback_data="op_chat")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    if update.message:
-        await update.message.reply_text(saludo, reply_markup=reply_markup)
-    elif update.callback_query:
-        await update.callback_query.edit_message_text(saludo, reply_markup=reply_markup)
-
-async def mostrar_submenu_stock(query):
-    keyboard = [
-        [InlineKeyboardButton("📊 Consultar Stock", callback_data="op_stock_consultar")],
-        [InlineKeyboardButton("➕ Agregar Stock", callback_data="op_stock_agregar")],
-        [InlineKeyboardButton("➖ Quitar Stock", callback_data="op_stock_quitar")],
-        [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
-    ]
-    await query.edit_message_text("📦 **Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-
-async def mostrar_submenu_pastillero(query):
-    keyboard = [
-        [InlineKeyboardButton("💊 Stock Pastillas", callback_data="op_pastillero_stock")],
-        [InlineKeyboardButton("🗓 Últimas tomas", callback_data="op_pastillero_tomas")],
-        [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
-    ]
-    await query.edit_message_text("📦 **Menú de Stock:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-
-async def mostrar_submenu_tramites(query):
-    keyboard = [
-        [InlineKeyboardButton("ℹ️ Estado de trámites", callback_data="op_tramites_estado")],
-        [InlineKeyboardButton("📝 Iniciar trámite de OS", callback_data="op_tramites_iniciar_os")],
-        [InlineKeyboardButton("🔄 Iniciar trámite backup", callback_data="op_tramites_iniciar_backup")],
-        [InlineKeyboardButton("✅ Cerrar trámites abiertos", callback_data="op_tramites_cerrar")],
-        [InlineKeyboardButton("🔙 Volver al Menú Principal", callback_data="menu_principal")]
-    ]
-    await query.edit_message_text("📋 **Menú de Trámites:**\nSeleccioná una opción:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-
-def obtener_boton_volver():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Volver al Menú Principal", callback_data="menu_principal")]])
-
-
-def obtener_opciones_sondas():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton('📦 Stock de Sondas', callback_data='aclaracion_sondas:stock')],
-        [InlineKeyboardButton('📥 Movimientos de entrada y salida de Sondas', callback_data='aclaracion_sondas:movimientos')],
-        [InlineKeyboardButton('📋 Envíos', callback_data='aclaracion_sondas:envios')],
-        [InlineKeyboardButton('📊 Autonomía actual', callback_data='aclaracion_sondas:autonomia')],
-    ])
-
-# --- 6. MANEJADOR DE BOTONES Y ACCIONES ---
-
-async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    await sync_to_async(connection.close_if_unusable_or_obsolete)()
-    opcion = query.data
-
-    # Navegación
-    if opcion == "menu_principal":
-        await mostrar_menu_principal(update, context)
-    elif opcion == "menu_stock":
-        await mostrar_submenu_stock(query)
-    elif opcion == "menu_pastillero":
-        await mostrar_submenu_pastillero(query)
-    elif opcion == "menu_tramites":
-        await mostrar_submenu_tramites(query)
-
-    elif opcion.startswith('aclaracion_sondas:'):
-        opcion_sondas = opcion.split(':', 1)[1]
-        chat_id = str(query.message.chat_id)
-        if opcion_sondas == 'stock':
-            intencion = 'stock_sondas'
-            reporte = await sync_to_async(consultar_stock_sondas)()
-        elif opcion_sondas == 'movimientos':
-            intencion = 'movimientos_sondas'
-            reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
-        elif opcion_sondas == 'envios':
-            intencion = 'movimientos_tramites'
-            reporte = await sync_to_async(consultar_ultimos_tramites)()
-        else:
-            intencion = 'autonomia_sondas'
-            reporte = await sync_to_async(consultar_autonomia_sondas)()
-        context.user_data.pop('aclaracion_pendiente', None)
-        await query.edit_message_text(reporte, reply_markup=obtener_boton_volver())
-        return
-
-    elif opcion.startswith('tomar_medicamento:'):
-        medicamento_id = int(opcion.split(':', 1)[1])
-        try:
-            medicamento, registrado, motivo = await sync_to_async(registrar_toma_recordatorio)(medicamento_id)
-            tarea = recordatorio_tasks.pop(medicamento_id, None)
-            if tarea:
-                tarea.cancel()
-            if motivo == 'tomado':
-                texto = f'✅ Toma registrada: {medicamento.nombre}. Quedan {medicamento.cantidad_total} pastillas.'
-            elif motivo == 'sin_stock':
-                texto = f'⚠️ {medicamento.nombre} no tiene stock disponible.'
-            else:
-                texto = f'ℹ️ {medicamento.nombre} ya fue procesado hoy.'
-            await query.edit_message_text(texto, reply_markup=obtener_boton_volver())
-        except Pastillero.DoesNotExist:
-            await query.edit_message_text('⚠️ Ese medicamento ya no existe.', reply_markup=obtener_boton_volver())
-        return
-
-    elif opcion.startswith('ignorar_medicamento:'):
-        medicamento_id = int(opcion.split(':', 1)[1])
-        try:
-            medicamento = await sync_to_async(omitir_medicamento_hoy)(medicamento_id)
-            tarea = recordatorio_tasks.pop(medicamento_id, None)
-            if tarea:
-                tarea.cancel()
-            await query.edit_message_text(
-                f'🙈 Entendido. No te avisaré nuevamente por {medicamento.nombre} hoy.',
-                reply_markup=obtener_boton_volver(),
-            )
-        except Pastillero.DoesNotExist:
-            await query.edit_message_text('⚠️ Ese medicamento ya no existe.', reply_markup=obtener_boton_volver())
-        return
-
-    # Submenú Stock
-    elif opcion == "op_stock_consultar":
-        res = await sync_to_async(consultar_estado_stock)()
-        await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-    elif opcion == "op_stock_agregar":
-        await query.edit_message_text("➕ **Agregar Stock:**\nEscribime qué insumo ingresó (ejemplo: *'Ingresaron 2 cajas de sondas'*).", reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-    elif opcion == "op_stock_quitar":
-        await query.edit_message_text("➖ **Quitar Stock:**\nEscribime qué insumo retiraste (ejemplo: *'Descontar 2 cajas de sondas'*).", reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-
-    # Submenú Pastillero
-    elif opcion == "op_pastillero_stock":
-        res = await sync_to_async(consultar_stock_pastillero)()
-        await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-    elif opcion == "op_pastillero_tomas":
-        res = await sync_to_async(consultar_ultimas_tomas)()
-        await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-
-    # Submenú Trámites
-    elif opcion == "op_tramites_estado":
-        res = await sync_to_async(obtener_resumen_pedidos)()
-        await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-    elif opcion == "op_tramites_iniciar_os":
-        res = await sync_to_async(iniciar_tramite_pedido)(tipo_tramite="os", cantidad=10)
-        await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-    elif opcion == "op_tramites_iniciar_backup":
-        res = await sync_to_async(iniciar_tramite_pedido)(tipo_tramite="backup", cantidad=150)
-        await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-    elif opcion == "op_tramites_cerrar":
-        res = await sync_to_async(cerrar_tramite_pedido)(tipo_tramite="os", tipo_stock="cajas")
-        await query.edit_message_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-
-    # Modo Chat Libre
-    elif opcion == "op_chat":
-        await query.edit_message_text("💬 **Modo Chat con IA Activado:**\nPodés escribirme cualquier consulta libremente.", reply_markup=obtener_boton_volver())
-
-# --- 7. ATENCIÓN DE MENSAJES Y CHAT ---
-
-async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto_usuario = update.message.text.strip()
-    texto_lower = texto_usuario.lower()
-
-    # Disparador para mostrar el menú
-    if "hola astrana" in texto_lower or texto_lower in ["/start", "/menu"]:
-        await mostrar_menu_principal(update, context)
-        return
-
-    try:
-        if es_reporte_ambiguo(texto_usuario):
-            context.user_data['aclaracion_pendiente'] = 'sondas'
-            await update.message.reply_text(
-                '¿A qué reporte te estás refiriendo?\n\n'
-                '• Stock de Sondas\n'
-                '• Movimientos de entrada y salida de Sondas\n'
-                '• Envíos\n'
-                '• Reporte de la autonomía actual',
-                reply_markup=obtener_opciones_sondas(),
-            )
-            return
-
-        alta_pendiente = context.user_data.get('alta_medicamento_pendiente')
-        if alta_pendiente == 'confirmar':
-            if respuesta_si(texto_usuario):
-                context.user_data['alta_medicamento_pendiente'] = 'nombre'
-                await update.message.reply_text('Perfecto. ¿Cuál es el nombre del medicamento?')
-            elif respuesta_no(texto_usuario):
-                context.user_data.pop('alta_medicamento_pendiente', None)
-                await update.message.reply_text('OK Joaco. ¿Necesitás algo más?', reply_markup=obtener_boton_volver())
-            else:
-                await update.message.reply_text('Respondeme sí para agregarlo o no para cancelar.')
-            return
-
-        if alta_pendiente == 'nombre':
-            nombre = texto_usuario.strip()
-            if len(nombre) < 2:
-                await update.message.reply_text('Necesito un nombre válido para el medicamento.')
-                return
-            context.user_data['medicamento_nuevo_nombre'] = nombre
-            context.user_data['alta_medicamento_pendiente'] = 'cantidad'
-            await update.message.reply_text(f'¿Cuántas pastillas de {nombre} tenés?')
-            return
-
-        if alta_pendiente == 'cantidad':
-            cantidad_match = re.search(r'\d+', texto_usuario)
-            if not cantidad_match or int(cantidad_match.group()) <= 0:
-                await update.message.reply_text('Decime una cantidad válida mayor que cero.')
-                return
-            cantidad = int(cantidad_match.group())
-            nombre = context.user_data.pop('medicamento_nuevo_nombre')
-            medicamento = await sync_to_async(crear_medicamento_pastillero)(nombre, cantidad)
-            context.user_data.pop('alta_medicamento_pendiente', None)
-            await update.message.reply_text(
-                f'✅ Agregué {medicamento.nombre} con {medicamento.cantidad_total} pastillas.',
-                reply_markup=obtener_boton_volver(),
-            )
-            return
-
-        comando_memoria = await sync_to_async(procesar_comando_memoria)(
-            str(update.effective_chat.id), texto_usuario
-        )
-        if comando_memoria:
-            await update.message.reply_text(
-                comando_memoria,
-                reply_markup=obtener_boton_volver(),
-            )
-            return
-
-        chat_id = str(update.effective_chat.id)
-
-        # 1. Chequeo de memoria directa (alias y reglas aprendidas del chat)
-        intencion_memoria = await sync_to_async(detectar_consulta_con_memoria)(chat_id, texto_usuario)
-
-        # 2. Análisis NLP local con scikit-learn y rapidfuzz
-        nlp_res = await sync_to_async(nlp_engine.interpretar)(texto_usuario, chat_id=chat_id)
-        intencion = intencion_memoria or nlp_res.intent
-        entidades = nlp_res.entities
-        confianza = nlp_res.confidence
-
-        logger.info("NLP Local: intencion='%s', conf=%.2f, entidades=%s", intencion, confianza, entidades)
-
-        if intencion == 'saludo':
-            await mostrar_menu_principal(update, context)
-            return
-
-        if intencion == 'consultar_stock':
-            reporte = await sync_to_async(consultar_estado_stock)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'consultar_autonomia':
-            reporte = await sync_to_async(consultar_autonomia_sondas)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'movimientos_sondas':
-            reporte = await sync_to_async(consultar_ultimos_movimientos_sondas)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver())
-            return
-
-        if intencion == 'agregar_stock':
-            cantidad = entidades.get('cantidad')
-            tipo_stock = entidades.get('tipo_stock', 'stock_normal')
-            insumo = entidades.get('insumo')
-            nombre_insumo = insumo.nombre if insumo else "Sondas"
-            if not cantidad:
-                await update.message.reply_text(
-                    f"❓ ¿Cuántas cajas o unidades de {nombre_insumo} ingresaron? (Ej: 'Ingresaron 2 cajas')",
-                    reply_markup=obtener_boton_volver()
-                )
-                return
-            res = await sync_to_async(registrar_movimiento)(
-                nombre_insumo=nombre_insumo, accion="cargar", cantidad=cantidad, tipo_stock=tipo_stock
-            )
-            await update.message.reply_text(res, reply_markup=obtener_boton_volver())
-            return
-
-        if intencion == 'quitar_stock':
-            cantidad = entidades.get('cantidad')
-            tipo_stock = entidades.get('tipo_stock', 'stock_normal')
-            insumo = entidades.get('insumo')
-            nombre_insumo = insumo.nombre if insumo else "Sondas"
-            if not cantidad:
-                await update.message.reply_text(
-                    f"❓ ¿Cuántas cajas o unidades de {nombre_insumo} retiraste? (Ej: 'Descontar 1 caja')",
-                    reply_markup=obtener_boton_volver()
-                )
-                return
-            res = await sync_to_async(registrar_movimiento)(
-                nombre_insumo=nombre_insumo, accion="descargar", cantidad=cantidad, tipo_stock=tipo_stock
-            )
-            await update.message.reply_text(res, reply_markup=obtener_boton_volver())
-            return
-
-        if intencion == 'consultar_tramites':
-            reporte = await sync_to_async(obtener_resumen_pedidos)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'iniciar_tramite':
-            tipo_tramite = entidades.get('tipo_tramite', 'os')
-            cantidad = entidades.get('cantidad')
-            res = await sync_to_async(iniciar_tramite_pedido)(tipo_tramite=tipo_tramite, cantidad=cantidad)
-            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'cerrar_tramite':
-            tipo_tramite = entidades.get('tipo_tramite', 'os')
-            tipo_stock = entidades.get('tipo_stock', 'stock_normal')
-            res = await sync_to_async(cerrar_tramite_pedido)(tipo_tramite=tipo_tramite, tipo_stock=tipo_stock)
-            await update.message.reply_text(res, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'pastillero_stock':
-            reporte = await sync_to_async(consultar_stock_pastillero)()
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'consultar_tomas':
-            reporte = await sync_to_async(consultar_tomas_medicamentos)(texto_usuario, solo_ultimas=True)
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'consultar_si_tomo':
-            medicamento = entidades.get('medicamento')
-            med_nombre = entidades.get('medicamento_nombre')
-            if medicamento is None and med_nombre and not consulta_medicamento_generica(texto_usuario):
-                context.user_data['alta_medicamento_pendiente'] = 'confirmar'
-                context.user_data['medicamento_nuevo_nombre'] = med_nombre
-                await update.message.reply_text(
-                    f"❌ No encontré un medicamento llamado '{med_nombre}' en el pastillero.\n¿Te gustaría que lo agreguemos?",
-                    reply_markup=obtener_boton_volver()
-                )
-                return
-            reporte = await sync_to_async(consultar_si_tome_medicamento)(texto_usuario)
-            await update.message.reply_text(reporte, reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'registrar_toma':
-            medicamento = entidades.get('medicamento')
-            med_nombre = entidades.get('medicamento_nombre')
-            cantidad = entidades.get('cantidad', 1) or 1
-
-            if medicamento is None and med_nombre:
-                context.user_data['alta_medicamento_pendiente'] = 'confirmar'
-                context.user_data['medicamento_nuevo_nombre'] = med_nombre
-                await update.message.reply_text(
-                    f"❌ No encontré '{med_nombre}' en el pastillero.\n¿Te gustaría darlo de alta primero?",
-                    reply_markup=obtener_boton_volver()
-                )
-                return
-
-            if medicamento:
-                med_obj, reg, motivo = await sync_to_async(registrar_toma_recordatorio)(medicamento.id)
-                tarea = recordatorio_tasks.pop(medicamento.id, None)
-                if tarea:
-                    tarea.cancel()
-                if motivo == 'tomado':
-                    texto = f"✅ Toma registrada: {med_obj.nombre} ({cantidad} un.). Quedan {med_obj.cantidad_total} pastillas."
-                elif motivo == 'sin_stock':
-                    texto = f"⚠️ {med_obj.nombre} no tiene stock disponible en el pastillero."
-                else:
-                    texto = f"ℹ️ {med_obj.nombre} ya figuraba como tomado hoy."
-                await update.message.reply_text(texto, reply_markup=obtener_boton_volver())
-                return
-
-            rep = await sync_to_async(consultar_stock_pastillero)()
-            await update.message.reply_text(f"❓ ¿Qué pastilla tomaste?\n\n{rep}", reply_markup=obtener_boton_volver(), parse_mode="Markdown")
-            return
-
-        if intencion == 'agregar_medicamento':
-            med_nombre = entidades.get('medicamento_nombre')
-            cantidad = entidades.get('cantidad')
-            if med_nombre and cantidad:
-                med = await sync_to_async(crear_medicamento_pastillero)(med_nombre, cantidad)
-                await update.message.reply_text(
-                    f"✅ Agregué {med.nombre} con {med.cantidad_total} pastillas al pastillero.",
-                    reply_markup=obtener_boton_volver()
-                )
-                return
-            elif med_nombre:
-                context.user_data['medicamento_nuevo_nombre'] = med_nombre
-                context.user_data['alta_medicamento_pendiente'] = 'cantidad'
-                await update.message.reply_text(f"¿Cuántas pastillas de {med_nombre} tenés?")
-                return
-            else:
-                context.user_data['alta_medicamento_pendiente'] = 'nombre'
-                await update.message.reply_text("Perfecto. ¿Cuál es el nombre del medicamento?")
-                return
-
-        # Fallback si Gemini estuviera configurado
-        if gemini_client is not None:
-            user_id = update.effective_user.id
-            if user_id not in historiales:
-                historiales[user_id] = gemini_client.chats.create(
-                    model='gemini-3.6-flash',
-                    config=gemini_config,
-                )
-            await sync_to_async(connection.close_if_unusable_or_obsolete)()
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    historiales[user_id].send_message,
-                    texto_usuario,
-                    config=gemini_config,
-                ),
-                timeout=35,
-            )
-            if response.text:
-                await update.message.reply_text(response.text, reply_markup=obtener_boton_volver())
-                return
-            else:
-                await update.message.reply_text("✅ Movimiento procesado.", reply_markup=obtener_boton_volver())
-                return
-
-        # Respuesta sugerida amigable si no se entendió la consulta
-        await update.message.reply_text(
-            "No terminé de entender tu consulta. Podés pedirme:\n"
-            "• Stock de sondas o pastillero\n"
-            "• Cargar o descontar stock\n"
-            "• Reporte de autonomía o movimientos\n"
-            "• Trámites de Obra Social o Backup\n"
-            "• Consultar o registrar tomas de pastillas\n\n"
-            "O abrí el menú interactivo:",
-            reply_markup=obtener_boton_volver()
-        )
-
-    except Exception as e:
-        logger.exception("Error al responder mensaje en Astrana: %s", e)
-        await update.message.reply_text(
-            "Ocurrió un error al procesar tu solicitud. ¿Querés intentar desde el menú?",
-            reply_markup=obtener_boton_volver()
-        )
-
-
-async def manejar_error(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error('Error no controlado de Telegram: %s', context.error, exc_info=context.error)
-
-# --- 8. PUNTO DE ENTRADA ---
-
-def main():
-    if not TELEGRAM_TOKEN:
-        print("❌ ERROR: No se encontró TELEGRAM_TOKEN.")
-        return
-
-    application = (
-        ApplicationBuilder()
-        .token(TELEGRAM_TOKEN)
-        .build()
-    )
-    
-    application.add_handler(CommandHandler(["start", "menu"], responder))
-    application.add_handler(CallbackQueryHandler(manejar_botones))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), responder))
-    application.add_error_handler(manejar_error)
-    
-    print("🚀 Astrana IA (Híbrido Menú Árbol + Herramientas) desplegando...")
-    application.run_polling(drop_pending_updates=True)
-
-if __name__ == '__main__':
-    main()

@@ -1,14 +1,13 @@
 from django.shortcuts import render, redirect
 from .forms import PedidoForm, SalidaStockForm
 from .models import IngresoPastillero, Insumo, Pedido, Salida, Envio
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum, Q 
 from datetime import datetime, time, timedelta
 from django.utils.dateparse import parse_date, parse_time
 from django.utils import timezone
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .telegram_utils import enviar_alerta
 import json
 import re
 import requests
@@ -230,16 +229,19 @@ def iniciar_pedido(request):
             tipo_recibido = data.get('tipo', 'os')
             tipo_final = 'backup' if 'backup' in tipo_recibido.lower() or 'propio' in tipo_recibido.lower() else 'os'
             
-            if Envio.objects.filter(estado='tramite', tipo=tipo_final).exists():
-                return JsonResponse({'status': 'error', 'message': f'Ya existe un pedido de este tipo en curso.'}, status=400)
+            with transaction.atomic():
+                if Envio.objects.filter(estado='tramite', tipo=tipo_final).exists():
+                    return JsonResponse({'status': 'error', 'message': 'Ya existe un pedido de este tipo en curso.'}, status=400)
 
-            Envio.objects.create(
-                estado='tramite', 
-                tipo=tipo_final,
-                cantidad_pedida=12,
-                notas=f"Iniciado desde Home"
-            )
+                Envio.objects.create(
+                    estado='tramite',
+                    tipo=tipo_final,
+                    cantidad_pedida=12,
+                    notas="Iniciado desde Home",
+                )
             return JsonResponse({'status': 'success', 'message': '¡Trámite iniciado!'})
+        except IntegrityError:
+            return JsonResponse({'status': 'error', 'message': 'Ya existe un pedido de este tipo en curso.'}, status=400)
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
 
@@ -458,6 +460,68 @@ def _tokens_fcm_activos():
     return MemoriaAstrana.objects.filter(
         categoria='contexto', clave='fcm_token', activa=True,
     ).exclude(valor='')
+
+
+def _tipo_tramite_desde_texto(texto):
+    if not texto:
+        return None
+    from Astrana.main import normalizar_texto
+
+    palabras = set(normalizar_texto(texto).split())
+    if palabras & {'backup', 'stock', 'seguridad', 'reserva', 'propio'}:
+        return 'backup'
+    if palabras & {'os', 'social'} or {'obra', 'social'} <= palabras:
+        return 'os'
+    return None
+
+
+def _cantidad_desde_texto(texto):
+    from Astrana.nlp_engine import extraer_cantidad
+
+    cantidad = extraer_cantidad(texto)
+    return cantidad if cantidad and cantidad > 0 else None
+
+
+def _pedido_en_progreso(chat_id):
+    estado = MemoriaAstrana.objects.filter(
+        chat_id=chat_id,
+        categoria='contexto',
+        clave='pedido_estado',
+        activa=True,
+    ).first()
+    return estado.valor if estado else None
+
+
+def _guardar_pedido_state(chat_id, estado=None, tipo=None, cantidad=None):
+    if estado is not None:
+        MemoriaAstrana.objects.update_or_create(
+            chat_id=chat_id,
+            categoria='contexto',
+            clave='pedido_estado',
+            defaults={'valor': estado, 'activa': True, 'confirmada': True},
+        )
+    if tipo is not None:
+        MemoriaAstrana.objects.update_or_create(
+            chat_id=chat_id,
+            categoria='contexto',
+            clave='pedido_tipo',
+            defaults={'valor': tipo, 'activa': True, 'confirmada': True},
+        )
+    if cantidad is not None:
+        MemoriaAstrana.objects.update_or_create(
+            chat_id=chat_id,
+            categoria='contexto',
+            clave='pedido_cantidad',
+            defaults={'valor': str(cantidad), 'activa': True, 'confirmada': True},
+        )
+
+
+def _limpiar_pedido_state(chat_id):
+    MemoriaAstrana.objects.filter(
+        chat_id=chat_id,
+        categoria='contexto',
+        clave__startswith='pedido_',
+    ).delete()
 
 
 def _hora_recordatorio_pastillero(ahora, medicamento=None):
@@ -927,6 +991,84 @@ def astrana_chat_api(request):
             if transcripcion_usuario:
                 payload['transcription'] = transcripcion_usuario
             return JsonResponse(payload, status=status)
+
+        texto_normalizado = astrana.normalizar_texto(texto_usuario)
+
+        estado_pedido = _pedido_en_progreso(chat_id)
+        if estado_pedido == 'esperando_cierre_tipo':
+            tipo = _tipo_tramite_desde_texto(texto_usuario)
+            if tipo and Envio.objects.filter(tipo=tipo, estado='tramite').exists():
+                resultado = astrana.cerrar_tramite_pedido(tipo_tramite=tipo)
+                _limpiar_pedido_state(chat_id)
+                return respuesta_con_historial(resultado)
+            return respuesta_con_historial(
+                'Decime “obra social” o “backup” para elegir cuál de los pedidos recibiste.'
+            )
+
+        if estado_pedido == 'esperando_tipo':
+            tipo = _tipo_tramite_desde_texto(texto_usuario)
+            if tipo:
+                _guardar_pedido_state(chat_id, estado='esperando_cantidad', tipo=tipo)
+                return respuesta_con_historial('Muy bien. ¿Cuántas sondas querés pedir?')
+            return respuesta_con_historial('¿Qué tipo de pedido querés hacer? Decime “obra social” o “backup”.')
+
+        if estado_pedido == 'esperando_cantidad':
+            cantidad = _cantidad_desde_texto(texto_usuario)
+            tipo = MemoriaAstrana.objects.filter(
+                chat_id=chat_id,
+                categoria='contexto',
+                clave='pedido_tipo',
+                activa=True,
+            ).first()
+            if cantidad and cantidad > 0 and tipo:
+                resultado = astrana.iniciar_tramite_pedido(
+                    tipo_tramite=tipo.valor,
+                    cantidad=cantidad,
+                    cantidad_en_unidades=True,
+                )
+                _limpiar_pedido_state(chat_id)
+                return respuesta_con_historial(
+                    f'{resultado} Cuando llegue el pedido, decime “ya recibí el pedido” para cerrarlo y sumar el stock.'
+                )
+            return respuesta_con_historial('¿Cuántas sondas querés pedir?')
+
+        if any(token in texto_normalizado for token in ['iniciar pedido', 'iniciar tramite', 'nuevo pedido', 'vamos a iniciar un pedido', 'pedido de sondas']) and not any(token in texto_normalizado for token in ['consultar', 'estado', 'como viene']):
+            _guardar_pedido_state(chat_id, estado='esperando_tipo')
+            return respuesta_con_historial('Muy bien. ¿Qué tipo de pedido vas a hacer? Decime “obra social” o “backup”.')
+
+        if any(token in texto_normalizado for token in [
+            'ya recibi', 'recibi el pedido', 'ya me llegaron',
+            'llego el pedido', 'llego mi pedido', 'pedido recibido',
+        ]):
+            tipo = _tipo_tramite_desde_texto(texto_usuario)
+            tipos_abiertos = list(
+                Envio.objects.filter(estado='tramite')
+                .values_list('tipo', flat=True)
+                .distinct()
+            )
+            if tipo is None and len(tipos_abiertos) == 1:
+                tipo = tipos_abiertos[0]
+            if tipo and tipo in tipos_abiertos:
+                resultado = astrana.cerrar_tramite_pedido(tipo_tramite=tipo)
+                return respuesta_con_historial(resultado)
+            if len(tipos_abiertos) > 1:
+                _guardar_pedido_state(chat_id, estado='esperando_cierre_tipo')
+                return respuesta_con_historial(
+                    'Hay pedidos abiertos de más de un tipo. ¿Recibiste el de obra social o el de backup?'
+                )
+            return respuesta_con_historial('No encontré un pedido en trámite para cerrar. Si querés iniciar uno, decime “iniciar pedido”.')
+
+        consulta_pedidos_abiertos = (
+            ('pedido' in texto_normalizado or 'pedidos' in texto_normalizado
+             or 'tramite' in texto_normalizado or 'tramites' in texto_normalizado
+             or 'envio' in texto_normalizado or 'envios' in texto_normalizado)
+            and any(token in texto_normalizado for token in [
+                'abierto', 'abiertos', 'en curso', 'pendiente', 'pendientes',
+                'hay pedidos', 'hay tramites', 'hay envios',
+            ])
+        )
+        if consulta_pedidos_abiertos:
+            return respuesta_con_historial(astrana.obtener_resumen_pedidos())
 
         comando_memoria = astrana.procesar_comando_memoria(chat_id, texto_usuario)
         if comando_memoria:

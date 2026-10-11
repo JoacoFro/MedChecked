@@ -106,6 +106,15 @@ class Envio(models.Model):
     estado = models.CharField(max_length=20, choices=ESTADOS, default='tramite')
     notas = models.TextField(blank=True, null=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tipo'],
+                condition=models.Q(estado='tramite'),
+                name='un_envio_abierto_por_tipo',
+            ),
+        ]
+
     @property
     def demora_real(self):
         if self.fecha_cierre:

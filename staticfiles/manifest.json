@@ -1,0 +1,27 @@
+{
+  "id": "/astrana/",
+  "name": "Astrana IA - Asistente",
+  "short_name": "Astrana",
+  "description": "Asistente personal Astrana para MedChecked",
+  "start_url": "/astrana/",
+  "scope": "/astrana/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#0b132b",
+  "theme_color": "#0b132b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/astrana/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/astrana/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
