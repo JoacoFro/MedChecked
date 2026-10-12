@@ -640,32 +640,32 @@ def obtener_resumen_pedidos():
 
         # --- PEDIDOS ABIERTOS ---
         if en_curso:
-            reporte = f"📋 **Pedidos abiertos ({en_curso.count()}):**\n"
+            reporte = f"📋 Pedidos abiertos ({en_curso.count()}):\n"
             for tramite in en_curso:
                 tipo_legible = '🔄 Backup / Propio' if tramite.tipo == 'backup' else '🏥 Obra Social'
                 cantidad_en_unidades = tramite.notas == 'PWA: cantidad expresada en unidades'
                 unidad = 'unidades' if cantidad_en_unidades else 'cajas'
                 dias_en_tramite = tramite.demora_real
                 reporte += (
-                    f"\n▸ **Tipo:** {tipo_legible}\n"
-                    f"  **Cantidad pedida:** {tramite.cantidad_pedida} {unidad}\n"
-                    f"  **Fecha inicio:** {tramite.fecha_solicitud:%d/%m/%Y}\n"
-                    f"  **Días en trámite:** {dias_en_tramite} días\n"
-                    f"  **Notas:** {tramite.notas or '—'}\n"
+                    f"\n▸ Tipo: {tipo_legible}\n"
+                    f"  Cantidad pedida: {tramite.cantidad_pedida} {unidad}\n"
+                    f"  Fecha inicio: {tramite.fecha_solicitud:%d/%m/%Y}\n"
+                    f"  Días en trámite: {dias_en_tramite} días\n"
+                    f"  Notas: {tramite.notas or '—'}\n"
                 )
         else:
-            reporte = "📋 **Pedidos abiertos:** Ninguno en curso.\n"
+            reporte = "📋 Pedidos abiertos:** Ninguno en curso.\n"
 
         # --- ÚLTIMOS CERRADOS ---
-        reporte += "\n✅ **Últimos trámites cerrados:**\n"
+        reporte += "\n✅ Últimos trámites cerrados:\n"
         if cerrados:
             for tramite in cerrados:
                 tipo_legible = '🔄 Backup / Propio' if tramite.tipo == 'backup' else '🏥 Obra Social'
                 reporte += (
-                    f"\n▸ **Tipo:** {tipo_legible}\n"
-                    f"  **Cantidad:** {tramite.cantidad_pedida}\n"
-                    f"  **Inicio → Cierre:** {tramite.fecha_solicitud:%d/%m/%Y} → {tramite.fecha_cierre:%d/%m/%Y}\n"
-                    f"  **Demora:** {tramite.demora_real} días\n"
+                    f"\n▸ Tipo: {tipo_legible}\n"
+                    f"  Cantidad: {tramite.cantidad_pedida}\n"
+                    f"  Inicio → Cierre: {tramite.fecha_solicitud:%d/%m/%Y} → {tramite.fecha_cierre:%d/%m/%Y}\n"
+                    f"  Demora: {tramite.demora_real} días\n"
                 )
         else:
             reporte += "Sin trámites cerrados registrados.\n"
@@ -690,7 +690,7 @@ def consultar_ultimos_tramites():
                 if tramite.fecha_cierre else 'Sin cerrar'
             )
             reporte += (
-                f"• **{tramite.get_tipo_display()}** | "
+                f"• {tramite.get_tipo_display()} | "
                 f"Estado: {tramite.get_estado_display()} | "
                 f"Cantidad: {tramite.cantidad_pedida} | "
                 f"Inicio: {tramite.fecha_solicitud:%d/%m/%Y} | "
