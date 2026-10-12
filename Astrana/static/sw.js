@@ -24,12 +24,12 @@ const messaging = typeof firebase !== 'undefined' && firebase.messaging ? fireba
 
 if (messaging) {
   messaging.onBackgroundMessage((payload) => {
-    const title = payload.notification?.title || '💊 Astrana';
+    const title = payload.notification?.title || payload.data?.title || '💊 Astrana';
     const options = {
-      body: payload.notification?.body || 'Tienes un recordatorio de Astrana.',
+      body: payload.notification?.body || payload.data?.body || 'Tienes un recordatorio de Astrana.',
       icon: '/astrana/icon-192.png',
       badge: '/astrana/icon-192.png',
-      data: payload.data || {},
+      data: { ...payload.data, url: payload.data?.url || '/astrana/' },
       requireInteraction: true,
       actions: [
         { action: 'abrir_astrana', title: '✨ Abrir Astrana' }

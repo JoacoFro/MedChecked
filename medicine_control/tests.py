@@ -21,6 +21,33 @@ class AstranaPwaTests(TestCase):
 	def setUp(self):
 		self.client.defaults['wsgi.url_scheme'] = 'https'
 
+	@patch.dict('sys.modules', {'Astrana.main': None})
+	def test_pastillero_state_endpoint_does_not_import_astrana_runtime(self):
+		Pastillero.objects.create(nombre='Enalapril', cantidad_total=4)
+
+		response = self.client.get(
+			reverse('astrana_estado_pastillero_hoy'),
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(len(response.json()['pendientes']), 1)
+
+	@patch.dict('sys.modules', {'Astrana.main': None})
+	def test_pastillero_confirmation_does_not_import_astrana_runtime(self):
+		medicamento = Pastillero.objects.create(nombre='Enalapril', cantidad_total=4)
+
+		response = self.client.post(
+			reverse('astrana_confirmar_toma_api'),
+			data=json.dumps({'medicamento_id': medicamento.id}),
+			content_type='application/json',
+			secure=True,
+		)
+
+		medicamento.refresh_from_db()
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(medicamento.cantidad_total, 3)
+
 	def test_home_order_actions_allow_one_open_per_type_and_save_both_receipts(self):
 		for tipo in ('os', 'backup'):
 			response = self.client.post(
@@ -430,6 +457,14 @@ class FcmScheduledNotificationsTests(TestCase):
 	@patch('medicine_control.views._enviar_push_fcm')
 	def test_medication_reminder_waits_for_schedule_and_sends_once_per_day(self, send_push):
 		Pastillero.objects.create(nombre='Medicación diaria', cantidad_total=5)
+		MemoriaAstrana.objects.create(
+			chat_id='pwa-old-session',
+			categoria='contexto',
+			clave='fcm_token',
+			valor='test-fcm-token',
+			activa=True,
+			confirmada=True,
+		)
 		zone = ZoneInfo('America/Argentina/Buenos_Aires')
 
 		before_schedule = datetime(2026, 10, 5, 7, 14, tzinfo=zone)
@@ -439,6 +474,25 @@ class FcmScheduledNotificationsTests(TestCase):
 		self.assertEqual(medicine_views._notificar_recordatorios_pastillero(scheduled_time), 0)
 		self.assertEqual(send_push.call_count, 1)
 		self.assertEqual(send_push.call_args.args[0], 'test-fcm-token')
+
+	def test_fcm_payload_uses_data_only_to_prevent_browser_auto_display_duplicates(self):
+		with patch('medicine_control.views._inicializar_firebase_admin'), patch(
+			'firebase_admin.messaging.send'
+		) as firebase_send:
+			medicine_views._enviar_push_fcm(
+				'test-fcm-token',
+				'Recordatorio',
+				'Tomá tu medicación.',
+				'/pastillero/',
+			)
+
+		message = firebase_send.call_args.args[0]
+		self.assertIsNone(message.notification)
+		self.assertEqual(message.data, {
+			'title': 'Recordatorio',
+			'body': 'Tomá tu medicación.',
+			'url': '/pastillero/',
+		})
 
 	@patch('medicine_control.views._enviar_push_fcm')
 	def test_pwa_custom_reminder_time_overrides_default_for_today_only(self, send_push):

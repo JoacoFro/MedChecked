@@ -8,6 +8,7 @@ from django.utils.dateparse import parse_date, parse_time
 from django.utils import timezone
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+import hashlib
 import json
 import re
 import requests
@@ -450,8 +451,7 @@ def _enviar_push_fcm(token, titulo, cuerpo, url):
     from firebase_admin import messaging
 
     messaging.send(messaging.Message(
-        notification=messaging.Notification(title=titulo, body=cuerpo),
-        data={'url': url},
+        data={'title': titulo, 'body': cuerpo, 'url': url},
         token=token,
     ))
 
@@ -459,7 +459,32 @@ def _enviar_push_fcm(token, titulo, cuerpo, url):
 def _tokens_fcm_activos():
     return MemoriaAstrana.objects.filter(
         categoria='contexto', clave='fcm_token', activa=True,
-    ).exclude(valor='')
+    ).exclude(valor='').order_by().values_list('valor', flat=True).distinct()
+
+
+def _chat_id_marcador_fcm(token):
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    return f'fcm-{token_hash}'
+
+
+def _fcm_notificacion_ya_enviada(token, clave, valor=None):
+    marcadores = MemoriaAstrana.objects.filter(
+        categoria='contexto',
+        clave=clave,
+        activa=True,
+    )
+    if valor is not None:
+        marcadores = marcadores.filter(valor=valor)
+
+    chats_legacy = MemoriaAstrana.objects.filter(
+        categoria='contexto',
+        clave='fcm_token',
+        valor=token,
+        activa=True,
+    ).values_list('chat_id', flat=True)
+    return marcadores.filter(
+        Q(chat_id=_chat_id_marcador_fcm(token)) | Q(chat_id__in=chats_legacy)
+    ).exists()
 
 
 def _tipo_tramite_desde_texto(texto):
@@ -558,23 +583,19 @@ def _notificar_recordatorios_pastillero(ahora):
             continue
         hora_enviada = f'{hora_objetivo[0]:02d}:{hora_objetivo[1]:02d}'
         clave = f'fcm_pastillero_{medicamento.id}_{hoy:%Y%m%d}'
-        for destino in _tokens_fcm_activos():
-            if MemoriaAstrana.objects.filter(
-                chat_id=destino.chat_id,
-                categoria='contexto',
-                clave=clave,
-                activa=True,
-            ).filter(valor=hora_enviada).exists():
+        for token in _tokens_fcm_activos():
+            chat_id_marcador = _chat_id_marcador_fcm(token)
+            if _fcm_notificacion_ya_enviada(token, clave, valor=hora_enviada):
                 continue
             try:
                 _enviar_push_fcm(
-                    destino.valor,
+                    token,
                     f'💊 Hora de tomar {medicamento.nombre}',
                     f'Recordá tomar tu medicación y registrarla en el pastillero.',
                     '/pastillero/',
                 )
                 MemoriaAstrana.objects.update_or_create(
-                    chat_id=destino.chat_id,
+                    chat_id=chat_id_marcador,
                     categoria='contexto',
                     clave=clave,
                     defaults={'valor': hora_enviada, 'activa': True, 'confirmada': True},
@@ -601,23 +622,19 @@ def _notificar_stock_bajo_pastillero():
             ).update(activa=False)
             continue
 
-        for destino in destinos:
-            if MemoriaAstrana.objects.filter(
-                chat_id=destino.chat_id,
-                categoria='contexto',
-                clave=clave,
-                activa=True,
-            ).exists():
+        for token in destinos:
+            chat_id_marcador = _chat_id_marcador_fcm(token)
+            if _fcm_notificacion_ya_enviada(token, clave):
                 continue
             try:
                 _enviar_push_fcm(
-                    destino.valor,
+                    token,
                     f'💊 Quedan pocas pastillas de {medicamento.nombre}',
                     f'Quedan {medicamento.cantidad_total} pastillas. Recargá el pastillero para no quedarte sin medicación.',
                     '/pastillero/',
                 )
                 MemoriaAstrana.objects.update_or_create(
-                    chat_id=destino.chat_id,
+                    chat_id=chat_id_marcador,
                     categoria='contexto',
                     clave=clave,
                     defaults={
@@ -653,26 +670,21 @@ def _notificar_stock_bajo_sondas():
             ).update(activa=False)
             continue
 
-        for destino in destinos:
-            marcador = MemoriaAstrana.objects.filter(
-                chat_id=destino.chat_id,
-                categoria='contexto',
-                clave=clave,
-                activa=True,
-            ).first()
-            if marcador:
+        for token in destinos:
+            chat_id_marcador = _chat_id_marcador_fcm(token)
+            if _fcm_notificacion_ya_enviada(token, clave):
                 continue
 
             dias = int(insumo.unidades_normales // consumo_diario)
             try:
                 _enviar_push_fcm(
-                    destino.valor,
+                    token,
                     '📦 Stock bajo de sondas',
                     f'Quedan {insumo.unidades_normales} sondas de stock normal, aproximadamente {dias} días de autonomía. Conviene iniciar la reposición.',
                     '/lista/',
                 )
                 MemoriaAstrana.objects.update_or_create(
-                    chat_id=destino.chat_id,
+                    chat_id=chat_id_marcador,
                     categoria='contexto',
                     clave=clave,
                     defaults={
@@ -1377,16 +1389,18 @@ def astrana_confirmar_toma_api(request):
         data = json.loads(request.body.decode('utf-8')) if request.body else {}
         medicamento_id = data.get('medicamento_id')
 
-        from Astrana import main as astrana
-        hoy = timezone.localdate()
+        from .pastillero_services import (
+            medicamentos_pendientes_ids,
+            registrar_toma_recordatorio,
+        )
 
         if medicamento_id:
-            med, reg, motivo = astrana.registrar_toma_recordatorio(int(medicamento_id))
+            med, reg, motivo = registrar_toma_recordatorio(int(medicamento_id))
         else:
-            pendientes = astrana.medicamentos_pendientes_ids()
+            pendientes = medicamentos_pendientes_ids()
             if not pendientes:
                 return JsonResponse({'status': 'info', 'message': 'No tenés medicamentos pendientes de toma hoy.'})
-            med, reg, motivo = astrana.registrar_toma_recordatorio(pendientes[0])
+            med, reg, motivo = registrar_toma_recordatorio(pendientes[0])
 
         if motivo == 'tomado':
             msg = f"¡Toma de {med.nombre} confirmada! Quedan {med.cantidad_total} pastillas en el pastillero."
@@ -1403,7 +1417,6 @@ def astrana_confirmar_toma_api(request):
 def astrana_estado_pastillero_hoy(request):
     """Consulta el estado del pastillero para el día de hoy para mostrar tarjetas interactivas en la PWA."""
     try:
-        from Astrana import main as astrana
         hoy = timezone.localdate()
         medicamentos = Pastillero.objects.all().order_by('nombre')
         pendientes = []
