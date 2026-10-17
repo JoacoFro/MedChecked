@@ -318,10 +318,14 @@ def rango_fecha_consulta(texto):
 
 def medicamento_mencionado(texto):
     texto_normalizado = normalizar_texto(texto)
-    medicamentos = Pastillero.objects.all().order_by('-nombre')
+    medicamentos = sorted(
+        Pastillero.objects.all(),
+        key=lambda medicamento: len(normalizar_texto(medicamento.nombre)),
+        reverse=True,
+    )
     for medicamento in medicamentos:
         nombre = normalizar_texto(medicamento.nombre)
-        if nombre and nombre in texto_normalizado:
+        if nombre and re.search(rf'(?<!\w){re.escape(nombre)}(?!\w)', texto_normalizado):
             return medicamento
     return None
 
@@ -359,6 +363,9 @@ def consultar_tomas_medicamentos(texto_usuario, solo_ultimas=False):
         connection.close_if_unusable_or_obsolete()
         fecha_inicio, fecha_fin = rango_fecha_consulta(texto_usuario)
         medicamento = medicamento_mencionado(texto_usuario)
+        if solo_ultimas and medicamento is None:
+            return '¿De cuál medicamento querés ver las últimas tomas? Decime su nombre y consulto solo ese historial.'
+
         tomas = TomaPastillero.objects.select_related('medicamento').all()
         if medicamento:
             tomas = tomas.filter(medicamento_id=medicamento.id)
@@ -823,8 +830,18 @@ def detectar_consulta_datos(texto_usuario):
         return 'verificar_toma_medicamento'
 
     habla_de_tramites = bool(palabras & {
-        'tramite', 'tramites', 'envio', 'envios',
+        'pedido', 'pedidos', 'tramite', 'tramites', 'envio', 'envios',
     })
+    consulta_ultimo_pedido = habla_de_tramites and (
+        bool(palabras & {'ultimo', 'ultimos', 'reciente', 'recientes'})
+        or (
+            bool(palabras & {'cuando', 'fecha'})
+            and bool(palabras & {'hice', 'pedi', 'solicite', 'realice', 'inicie'})
+        )
+    )
+    if consulta_ultimo_pedido:
+        return 'ultimo_pedido'
+
     consulta_informacion = bool(palabras & {
         'reporte', 'ultimo', 'ultimos', 'movimiento', 'movimientos',
         'historial', 'registro', 'registros', 'estado', 'informacion',

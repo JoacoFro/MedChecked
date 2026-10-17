@@ -1005,18 +1005,11 @@ def astrana_chat_api(request):
             return JsonResponse(payload, status=status)
 
         texto_normalizado = astrana.normalizar_texto(texto_usuario)
-        palabras_mensaje = set(texto_normalizado.split())
-        menciona_pedido = bool(palabras_mensaje & {
-            'pedido', 'pedidos', 'tramite', 'tramites', 'envio', 'envios',
-        })
-        pregunta_fecha_pedido = menciona_pedido and bool(
-            palabras_mensaje & {'cuando', 'hice', 'fecha', 'ultimo', 'ultimos'}
-        )
-        if pregunta_fecha_pedido:
+        intencion_regla = astrana.detectar_consulta_datos(texto_usuario)
+        if intencion_regla == 'ultimo_pedido':
             return respuesta_con_historial(astrana.consultar_ultimo_pedido_solicitado())
 
-        intencion_pastillero = astrana.detectar_consulta_datos(texto_usuario)
-        es_consulta_pastillero = intencion_pastillero in {
+        es_consulta_pastillero = intencion_regla in {
             'ultimas_tomas_pastillero',
             'consultar_tomas',
             'verificar_toma_medicamento',
@@ -1105,7 +1098,7 @@ def astrana_chat_api(request):
 
         intencion = astrana.detectar_consulta_con_memoria(chat_id, texto_usuario)
         if not intencion:
-            intencion = intencion_pastillero
+            intencion = intencion_regla
 
         entidades = {}
         if intencion is None:
@@ -1182,7 +1175,9 @@ def astrana_chat_api(request):
 
         if intencion == 'saludo':
             return respuesta_con_historial('Hola Joaco, soy Astrana. Puedo ayudarte con stock, sondas, trámites, envíos y pastillero. ¿Qué necesitás?')
-        if intencion == 'consultar_stock':
+        if intencion == 'ultimo_pedido':
+            respuesta = astrana.consultar_ultimo_pedido_solicitado()
+        elif intencion == 'consultar_stock':
             respuesta = astrana.consultar_estado_stock()
         elif intencion == 'consultar_autonomia':
             respuesta = astrana.consultar_autonomia_sondas()

@@ -108,9 +108,17 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(messages[0]['content'], 'hola astrana')
 
 	def test_chat_reports_latest_order_date_even_if_order_flow_is_waiting(self):
-		envio = Envio.objects.create(tipo='os', estado='recibido', cantidad_pedida=60)
-		fecha_solicitud = timezone.localdate() - timedelta(days=4)
-		Envio.objects.filter(pk=envio.pk).update(fecha_solicitud=fecha_solicitud)
+		fecha_base = timezone.localdate() - timedelta(days=10)
+		for indice in range(6):
+			envio = Envio.objects.create(
+				tipo='os' if indice % 2 == 0 else 'backup',
+				estado='recibido',
+				cantidad_pedida=30 + indice,
+			)
+			Envio.objects.filter(pk=envio.pk).update(
+				fecha_solicitud=fecha_base + timedelta(days=indice),
+			)
+		fecha_ultimo_pedido = fecha_base + timedelta(days=5)
 		session = self.client.session
 		session.create()
 		MemoriaAstrana.objects.create(
@@ -121,19 +129,27 @@ class AstranaPwaTests(TestCase):
 		)
 		session.save()
 
-		response = self.client.post(
-			reverse('astrana_chat_api'),
-			{'message': '¿Cuándo hice el último pedido?'},
-			secure=True,
-		)
+		for pregunta in (
+			'¿Cuándo hice el último pedido?',
+			'¿Cuál fue mi pedido más reciente?',
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': pregunta},
+				secure=True,
+			)
 
-		self.assertEqual(response.status_code, 200)
-		self.assertIn(fecha_solicitud.strftime('%d/%m/%Y'), response.json()['reply'])
-		self.assertIn('Obra Social', response.json()['reply'])
+			self.assertEqual(response.status_code, 200)
+			self.assertIn(fecha_ultimo_pedido.strftime('%d/%m/%Y'), response.json()['reply'])
+			self.assertNotIn(fecha_base.strftime('%d/%m/%Y'), response.json()['reply'])
+			self.assertEqual(response.json()['reply'].count('Estado:'), 1)
 
 	def test_chat_history_of_medication_works_during_pending_order(self):
-		medicamento = Pastillero.objects.create(nombre='Ditropan', cantidad_total=4)
-		TomaPastillero.objects.create(medicamento=medicamento, cantidad=1)
+		ditropan = Pastillero.objects.create(nombre='Ditropan', cantidad_total=4)
+		enalapril = Pastillero.objects.create(nombre='Enalapril', cantidad_total=4)
+		TomaPastillero.objects.create(medicamento=ditropan, cantidad=1)
+		TomaPastillero.objects.create(medicamento=enalapril, cantidad=1)
+		TomaPastillero.objects.create(medicamento=ditropan, cantidad=2)
 		session = self.client.session
 		session.create()
 		MemoriaAstrana.objects.create(
@@ -152,8 +168,25 @@ class AstranaPwaTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertIn('Ditropan', response.json()['reply'])
+		self.assertNotIn('Enalapril', response.json()['reply'])
 		self.assertNotIn('¿Cuántas', response.json()['reply'])
 		self.assertNotIn('no dispongo de registros', response.json()['reply'].lower())
+
+	def test_chat_asks_for_a_medication_when_latest_takes_query_does_not_name_one(self):
+		ditropan = Pastillero.objects.create(nombre='Ditropan', cantidad_total=4)
+		Pastillero.objects.create(nombre='Enalapril', cantidad_total=4)
+		TomaPastillero.objects.create(medicamento=ditropan, cantidad=1)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'Últimas tomas de cualquier medicamento del pastillero'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('¿De cuál medicamento', response.json()['reply'])
+		self.assertNotIn('Ditropan', response.json()['reply'])
+		self.assertNotIn('Enalapril', response.json()['reply'])
 
 	def test_chat_tramite_history_does_not_call_missing_handlers(self):
 		Envio.objects.create(tipo='backup', estado='recibido', cantidad_pedida=30)
