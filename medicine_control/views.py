@@ -1005,9 +1005,26 @@ def astrana_chat_api(request):
             return JsonResponse(payload, status=status)
 
         texto_normalizado = astrana.normalizar_texto(texto_usuario)
+        palabras_mensaje = set(texto_normalizado.split())
+        menciona_pedido = bool(palabras_mensaje & {
+            'pedido', 'pedidos', 'tramite', 'tramites', 'envio', 'envios',
+        })
+        pregunta_fecha_pedido = menciona_pedido and bool(
+            palabras_mensaje & {'cuando', 'hice', 'fecha', 'ultimo', 'ultimos'}
+        )
+        if pregunta_fecha_pedido:
+            return respuesta_con_historial(astrana.consultar_ultimo_pedido_solicitado())
+
+        intencion_pastillero = astrana.detectar_consulta_datos(texto_usuario)
+        es_consulta_pastillero = intencion_pastillero in {
+            'ultimas_tomas_pastillero',
+            'consultar_tomas',
+            'verificar_toma_medicamento',
+            'consultar_si_tomo',
+        }
 
         estado_pedido = _pedido_en_progreso(chat_id)
-        if estado_pedido == 'esperando_cierre_tipo':
+        if estado_pedido == 'esperando_cierre_tipo' and not es_consulta_pastillero:
             tipo = _tipo_tramite_desde_texto(texto_usuario)
             if tipo and Envio.objects.filter(tipo=tipo, estado='tramite').exists():
                 resultado = astrana.cerrar_tramite_pedido(tipo_tramite=tipo)
@@ -1017,14 +1034,14 @@ def astrana_chat_api(request):
                 'Decime “obra social” o “backup” para elegir cuál de los pedidos recibiste.'
             )
 
-        if estado_pedido == 'esperando_tipo':
+        if estado_pedido == 'esperando_tipo' and not es_consulta_pastillero:
             tipo = _tipo_tramite_desde_texto(texto_usuario)
             if tipo:
                 _guardar_pedido_state(chat_id, estado='esperando_cantidad', tipo=tipo)
                 return respuesta_con_historial('Muy bien. ¿Cuántas sondas querés pedir?')
             return respuesta_con_historial('¿Qué tipo de pedido querés hacer? Decime “obra social” o “backup”.')
 
-        if estado_pedido == 'esperando_cantidad':
+        if estado_pedido == 'esperando_cantidad' and not es_consulta_pastillero:
             cantidad = _cantidad_desde_texto(texto_usuario)
             tipo = MemoriaAstrana.objects.filter(
                 chat_id=chat_id,
@@ -1088,7 +1105,7 @@ def astrana_chat_api(request):
 
         intencion = astrana.detectar_consulta_con_memoria(chat_id, texto_usuario)
         if not intencion:
-            intencion = astrana.detectar_consulta_datos(texto_usuario)
+            intencion = intencion_pastillero
 
         entidades = {}
         if intencion is None:
@@ -1173,16 +1190,8 @@ def astrana_chat_api(request):
             tipo, solo_ultimo = astrana.detalle_movimiento_sondas(texto_usuario)
             respuesta = astrana.consultar_ultimos_movimientos_sondas(tipo, solo_ultimo)
         elif intencion in {'consultar_tramites', 'movimientos_tramites'}:
-            detalle = astrana.detalle_consulta_tramites(texto_usuario)
-            consultas = {
-                'estado': astrana.obtener_resumen_pedidos,
-                'ultimo_recibido': astrana.consultar_ultimo_tramite_recibido,
-                'demora_promedio': astrana.consultar_demora_promedio_tramites,
-                'proxima_fecha': astrana.consultar_proxima_fecha_pedido,
-                'ultimos_movimientos': astrana.consultar_ultimos_tramites,
-            }
-            respuesta = consultas[detalle]()
-        elif intencion in {'pastillero_stock', 'consultar_tomas'}:
+            respuesta = astrana.consultar_ultimos_tramites()
+        elif intencion in {'pastillero_stock', 'consultar_tomas', 'ultimas_tomas_pastillero'}:
             respuesta = (
                 astrana.consultar_stock_pastillero()
                 if intencion == 'pastillero_stock'

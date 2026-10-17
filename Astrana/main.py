@@ -701,6 +701,24 @@ def consultar_ultimos_tramites():
     except Exception as e:
         return f"Error al consultar el historial de trámites: {e}"
 
+
+def consultar_ultimo_pedido_solicitado():
+    """Indica cuándo se inició el pedido más reciente registrado en Envio."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        tramite = Envio.objects.order_by('-fecha_solicitud', '-id').first()
+        if tramite is None:
+            return 'No hay pedidos registrados en el historial de Envíos.'
+
+        return (
+            f"El último pedido registrado fue de {tramite.get_tipo_display()}, "
+            f"iniciado el {tramite.fecha_solicitud:%d/%m/%Y}. "
+            f"Estado: {tramite.get_estado_display()}."
+        )
+    except Exception as error:
+        return f'Error al consultar el último pedido: {error}'
+
+
 # --- 4. CONFIGURACIÓN DE GEMINI Y BOT ---
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
@@ -789,11 +807,12 @@ def detectar_consulta_datos(texto_usuario):
     }):
         return 'aclarar_sondas'
 
+    medicamento_en_pastillero = medicamento_mencionado(texto_usuario)
     habla_de_pastillero = bool(palabras & {
         'pastillero', 'pastillas', 'medicamento', 'medicamentos',
         'medicacion', 'medicación', 'tomas', 'toma', 'tableta', 'comprimido',
         'tome', 'tomé', 'tomaste', 'tomado',
-    })
+    }) or medicamento_en_pastillero is not None
     consulta_tomas = bool(palabras & {
         'toma', 'tomas', 'tomaste', 'tome', 'tomé', 'tomado',
         'ultimas', 'últimas', 'historial', 'registrada', 'registre',

@@ -13,7 +13,15 @@ from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from medicine_control import views as medicine_views
-from medicine_control.models import Envio, IngresoPastillero, Insumo, MemoriaAstrana, Pastillero, Pedido
+from medicine_control.models import (
+	Envio,
+	IngresoPastillero,
+	Insumo,
+	MemoriaAstrana,
+	Pastillero,
+	Pedido,
+	TomaPastillero,
+)
 from Astrana.webpush_utils import _cargar_clave_privada_vapid
 
 
@@ -98,6 +106,67 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(history_response.status_code, 200)
 		self.assertEqual([message['role'] for message in messages], ['user', 'assistant'])
 		self.assertEqual(messages[0]['content'], 'hola astrana')
+
+	def test_chat_reports_latest_order_date_even_if_order_flow_is_waiting(self):
+		envio = Envio.objects.create(tipo='os', estado='recibido', cantidad_pedida=60)
+		fecha_solicitud = timezone.localdate() - timedelta(days=4)
+		Envio.objects.filter(pk=envio.pk).update(fecha_solicitud=fecha_solicitud)
+		session = self.client.session
+		session.create()
+		MemoriaAstrana.objects.create(
+			chat_id=f'web-{session.session_key}',
+			categoria='contexto',
+			clave='pedido_estado',
+			valor='esperando_cantidad',
+		)
+		session.save()
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': '¿Cuándo hice el último pedido?'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn(fecha_solicitud.strftime('%d/%m/%Y'), response.json()['reply'])
+		self.assertIn('Obra Social', response.json()['reply'])
+
+	def test_chat_history_of_medication_works_during_pending_order(self):
+		medicamento = Pastillero.objects.create(nombre='Ditropan', cantidad_total=4)
+		TomaPastillero.objects.create(medicamento=medicamento, cantidad=1)
+		session = self.client.session
+		session.create()
+		MemoriaAstrana.objects.create(
+			chat_id=f'web-{session.session_key}',
+			categoria='contexto',
+			clave='pedido_estado',
+			valor='esperando_cantidad',
+		)
+		session.save()
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'Últimas tomas de Ditropan'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('Ditropan', response.json()['reply'])
+		self.assertNotIn('¿Cuántas', response.json()['reply'])
+		self.assertNotIn('no dispongo de registros', response.json()['reply'].lower())
+
+	def test_chat_tramite_history_does_not_call_missing_handlers(self):
+		Envio.objects.create(tipo='backup', estado='recibido', cantidad_pedida=30)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'Mostrame el historial de trámites'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('Últimos', response.json()['reply'])
+		self.assertIn('Back Up', response.json()['reply'])
 
 	def test_pwa_order_flow_requests_type_then_quantity_and_closes_when_received(self):
 		insumo = Insumo.objects.create(
