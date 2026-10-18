@@ -1,3 +1,4 @@
+import os
 import re
 import unicodedata
 import logging
@@ -423,7 +424,70 @@ class NLPEngine:
         self.pipeline: Optional[Pipeline] = None
         self._version_aprendizajes = None
         self._frases_aprendidas: Dict[str, str] = {}
+        self._semantic_model = None
+        self._semantic_vectors = None
+        self._semantic_labels: List[str] = []
+        self._semantic_version_aprendizajes = None
+        self._semantic_error_logged = False
         self._entrenar_clasificador()
+
+    @staticmethod
+    def semantic_shadow_enabled() -> bool:
+        return os.environ.get('ASTRANA_SEMANTIC_SHADOW', '').strip().lower() in {
+            '1', 'true', 'yes', 'on',
+        }
+
+    def clasificar_intencion_semantica(self, texto: str) -> Optional[Tuple[str, float]]:
+        """Clasifica en modo sombra; nunca se usa para decidir la respuesta."""
+        if not self.semantic_shadow_enabled():
+            return None
+
+        try:
+            if self._semantic_model is None:
+                from sentence_transformers import SentenceTransformer
+
+                self._semantic_model = SentenceTransformer(
+                    'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+                    device='cpu',
+                    local_files_only=True,
+                )
+
+            if self._semantic_version_aprendizajes != self._version_aprendizajes:
+                textos = []
+                etiquetas = []
+                for intencion, frases in INTENT_DATASET.items():
+                    for frase in frases:
+                        textos.append(frase)
+                        etiquetas.append(intencion)
+                for frase, intencion in self._frases_aprendidas.items():
+                    textos.append(frase)
+                    etiquetas.append(intencion)
+
+                self._semantic_vectors = self._semantic_model.encode(
+                    textos,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True,
+                    show_progress_bar=False,
+                )
+                self._semantic_labels = etiquetas
+                self._semantic_version_aprendizajes = self._version_aprendizajes
+
+            vector = self._semantic_model.encode(
+                [texto],
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )[0]
+            similitudes = self._semantic_vectors @ vector
+            indice = int(similitudes.argmax())
+            return self._semantic_labels[indice], float(similitudes[indice])
+        except Exception:
+            if not self._semantic_error_logged:
+                logger.exception(
+                    'No se pudo ejecutar la clasificación semántica de Astrana en modo sombra.'
+                )
+                self._semantic_error_logged = True
+            return None
 
     @staticmethod
     def _version_actual_aprendizajes():

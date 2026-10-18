@@ -46,6 +46,34 @@
             background-size: cover;
         }
 
+        .astrana-response-bubble {
+            background: rgba(28, 37, 65, 0.94);
+            border: 1px solid rgba(100, 116, 139, 0.45);
+            border-radius: 22px;
+            box-shadow: 0 12px 28px rgba(2, 6, 23, 0.28);
+        }
+
+        .user-message-bubble {
+            position: relative;
+            background: linear-gradient(155deg, #075ac8 0%, #172fa8 55%, #36088f 100%);
+            border: 2px solid #26a9ff;
+            border-radius: 19px;
+            box-shadow:
+                0 0 14px rgba(14, 165, 233, 0.24),
+                inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+
+        .user-message-bubble::after {
+            position: absolute;
+            right: -9px;
+            bottom: 7px;
+            width: 16px;
+            height: 16px;
+            background: linear-gradient(145deg, #1735ad 5%, #36088f 95%);
+            clip-path: polygon(0 0, 100% 100%, 0 72%);
+            content: "";
+        }
+
         ::-webkit-scrollbar { width: 5px; }
         ::-webkit-scrollbar-track { background: #0b132b; }
         ::-webkit-scrollbar-thumb { background: #1c2541; border-radius: 10px; }
@@ -109,7 +137,7 @@
             <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
                 <img src="{% url 'astrana_icon' %}" alt="Astrana Avatar" class="w-full h-full object-cover">
             </div>
-            <div class="bg-[#1c2541]/90 border border-slate-700/70 p-4 rounded-2xl rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-2">
+            <div class="astrana-response-bubble p-4 rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-2">
                 <p>Hola Joaco. Soy <strong class="font-astrana text-amber-300">Astrana</strong> ✨</p>
                 <p class="text-slate-300 text-xs leading-relaxed">
                     Estoy lista para asistirte con insumos, tomas y trámites. Podés preguntarme con tus propias palabras o consultar tus pastillas.
@@ -321,7 +349,7 @@
             const row = document.createElement('div');
             row.className = 'flex items-start justify-end gap-3';
             const bubble = document.createElement('div');
-            bubble.className = 'bg-gradient-to-tr from-amber-600 to-amber-500 text-slate-950 font-medium p-3.5 rounded-2xl rounded-tr-none max-w-[85%] text-sm shadow-lg glow-gold';
+            bubble.className = 'user-message-bubble p-3.5 max-w-[85%] text-sm text-white font-medium';
             bubble.textContent = text;
             row.appendChild(bubble);
             chatContainer.appendChild(row);
@@ -339,7 +367,7 @@
             image.className = 'w-full h-full object-cover';
             avatar.appendChild(image);
             const bubble = document.createElement('div');
-            bubble.className = 'bg-[#1c2541]/90 border border-slate-700/70 p-3.5 rounded-2xl rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-xl leading-relaxed whitespace-pre-wrap';
+            bubble.className = 'astrana-response-bubble p-3.5 rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-xl leading-relaxed whitespace-pre-wrap';
             const messageText = document.createElement('span');
             messageText.className = 'block';
             messageText.textContent = text;

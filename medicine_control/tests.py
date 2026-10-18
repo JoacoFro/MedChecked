@@ -6,6 +6,7 @@ from unittest.mock import patch
 import base64
 import json
 from datetime import datetime, time, timedelta
+from pathlib import Path
 from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -29,6 +30,64 @@ from Astrana.webpush_utils import _cargar_clave_privada_vapid
 class AstranaPwaTests(TestCase):
 	def setUp(self):
 		self.client.defaults['wsgi.url_scheme'] = 'https'
+
+	def test_astrana_chat_renders_the_response_bubble_style(self):
+		response = self.client.get(reverse('astrana_pwa'), secure=True)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'astrana-response-bubble')
+		self.assertContains(response, 'user-message-bubble')
+
+	def test_intent_evaluation_set_covers_all_intents_without_training_duplicates(self):
+		from Astrana.nlp_engine import INTENT_DATASET, normalizar_texto
+
+		evaluation_path = Path(__file__).resolve().parents[1] / 'Astrana' / 'intent_evaluation.json'
+		examples = json.loads(evaluation_path.read_text(encoding='utf-8'))
+		evaluation_phrases = [normalizar_texto(example['text']) for example in examples]
+		training_phrases = {
+			normalizar_texto(phrase)
+			for phrases in INTENT_DATASET.values()
+			for phrase in phrases
+		}
+		evaluation_counts = {
+			intent: sum(example['intent'] == intent for example in examples)
+			for intent in INTENT_DATASET
+		}
+
+		self.assertEqual({example['intent'] for example in examples}, set(INTENT_DATASET))
+		self.assertTrue(all(count >= 5 for count in evaluation_counts.values()))
+		self.assertEqual(len(evaluation_phrases), len(set(evaluation_phrases)))
+		self.assertFalse(set(evaluation_phrases) & training_phrases)
+
+	@patch.dict('os.environ', {'ASTRANA_SEMANTIC_SHADOW': '0'})
+	def test_semantic_shadow_is_disabled_by_default(self):
+		from Astrana.nlp_engine import NLPEngine
+
+		engine = NLPEngine()
+
+		self.assertIsNone(engine.clasificar_intencion_semantica('cuánto stock tengo'))
+		self.assertIsNone(engine._semantic_model)
+
+	@patch.dict('os.environ', {'ASTRANA_SEMANTIC_SHADOW': '1'})
+	@patch('Astrana.nlp_engine.nlp_engine.clasificar_intencion_semantica')
+	def test_semantic_shadow_does_not_change_the_chat_response(self, clasificar_semantico):
+		clasificar_semantico.return_value = ('consultar_autonomia', 0.99)
+		Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=4,
+			unidades_por_caja=30,
+			consumo_diario=8,
+		)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'cuánto stock tengo'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('stock', response.json()['reply'].lower())
+		clasificar_semantico.assert_called_once_with('cuánto stock tengo')
 
 	@patch.dict('sys.modules', {'Astrana.main': None})
 	def test_pastillero_state_endpoint_does_not_import_astrana_runtime(self):

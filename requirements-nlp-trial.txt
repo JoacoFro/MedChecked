@@ -1,0 +1,6 @@
+# Optional shadow evaluation only; do not add this file to normal Render installs.
+# Set ASTRANA_SEMANTIC_SHADOW=1 only after downloading the model and checking RAM/latency.
+# Download the model once with:
+# python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', device='cpu')"
+-r requirements.txt
+sentence-transformers==6.1.0

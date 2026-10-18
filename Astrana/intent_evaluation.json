@@ -1,0 +1,97 @@
+[
+  {"text": "Decime cuántas sondas me quedan ahora", "intent": "consultar_stock"},
+  {"text": "Quiero saber qué cantidad de cajas hay disponibles", "intent": "consultar_stock"},
+  {"text": "¿Con cuánto stock cuento para las sondas?", "intent": "consultar_stock"},
+  {"text": "Mostrame el inventario actual de sondas", "intent": "consultar_stock"},
+  {"text": "¿Me alcanza para saber cuántas unidades tengo guardadas?", "intent": "consultar_stock"},
+
+  {"text": "Anotá que recibí tres cajas nuevas de sondas", "intent": "agregar_stock"},
+  {"text": "Sumá veinte unidades al stock de reserva", "intent": "agregar_stock"},
+  {"text": "Hoy entraron sondas, cargá una caja más", "intent": "agregar_stock"},
+  {"text": "Quiero registrar un ingreso de stock normal", "intent": "agregar_stock"},
+  {"text": "Me llegaron treinta sondas para el backup", "intent": "agregar_stock"},
+
+  {"text": "Usé una caja, restala del stock", "intent": "quitar_stock"},
+  {"text": "Descontá quince unidades de la reserva", "intent": "quitar_stock"},
+  {"text": "Anotá que retiré sondas del stock principal", "intent": "quitar_stock"},
+  {"text": "Consumí veinte sondas sueltas, actualizá la cantidad", "intent": "quitar_stock"},
+  {"text": "Quiero registrar una salida de cajas", "intent": "quitar_stock"},
+
+  {"text": "¿Por cuántos días más tengo sondas?", "intent": "consultar_autonomia"},
+  {"text": "Calculame cuánto tiempo me dura el stock actual", "intent": "consultar_autonomia"},
+  {"text": "¿Hasta qué fecha llego con las sondas que tengo?", "intent": "consultar_autonomia"},
+  {"text": "Necesito ver mi cobertura de insumos", "intent": "consultar_autonomia"},
+  {"text": "¿Cuándo tendría que volver a pedir sondas?", "intent": "consultar_autonomia"},
+
+  {"text": "¿Qué entradas y consumos de sondas anoté?", "intent": "movimientos_sondas"},
+  {"text": "Quiero revisar los cambios anteriores del inventario", "intent": "movimientos_sondas"},
+  {"text": "Mostrame las operaciones registradas sobre las sondas", "intent": "movimientos_sondas"},
+  {"text": "¿Cuáles fueron las últimas cargas y bajas de stock?", "intent": "movimientos_sondas"},
+  {"text": "Buscá el registro de movimientos del insumo", "intent": "movimientos_sondas"},
+
+  {"text": "¿En qué situación están mis trámites?", "intent": "consultar_tramites"},
+  {"text": "Revisá qué pedidos siguen pendientes", "intent": "consultar_tramites"},
+  {"text": "¿Tengo algún envío abierto?", "intent": "consultar_tramites"},
+  {"text": "Quiero consultar el historial de mis gestiones", "intent": "consultar_tramites"},
+  {"text": "Contame cómo vienen los envíos de la obra social", "intent": "consultar_tramites"},
+
+  {"text": "¿Qué fue lo último que pedí?", "intent": "ultimo_pedido"},
+  {"text": "Decime solamente cuál es mi pedido más nuevo", "intent": "ultimo_pedido"},
+  {"text": "Necesito la fecha de la solicitud más reciente", "intent": "ultimo_pedido"},
+  {"text": "¿Cuál fue el pedido inmediatamente anterior?", "intent": "ultimo_pedido"},
+  {"text": "Mostrame un solo envío: el último que inicié", "intent": "ultimo_pedido"},
+
+  {"text": "Quiero empezar una solicitud para la obra social", "intent": "iniciar_tramite"},
+  {"text": "Abrí un pedido de sondas de reserva", "intent": "iniciar_tramite"},
+  {"text": "Necesito generar un nuevo trámite de provisión", "intent": "iniciar_tramite"},
+  {"text": "Empecemos la gestión para pedir insumos", "intent": "iniciar_tramite"},
+  {"text": "Iniciá una solicitud de backup por treinta unidades", "intent": "iniciar_tramite"},
+
+  {"text": "Ya llegó la caja, marcá el pedido como recibido", "intent": "cerrar_tramite"},
+  {"text": "Finalizá la gestión porque recibí las sondas", "intent": "cerrar_tramite"},
+  {"text": "Quiero cerrar el trámite de la obra social", "intent": "cerrar_tramite"},
+  {"text": "Confirmo que llegó el pedido de reserva", "intent": "cerrar_tramite"},
+  {"text": "Dá por terminado el envío que estaba pendiente", "intent": "cerrar_tramite"},
+
+  {"text": "¿Qué medicamentos tengo cargados?", "intent": "pastillero_stock"},
+  {"text": "Revisá cuántas tabletas quedan de cada remedio", "intent": "pastillero_stock"},
+  {"text": "Quiero ver las existencias de mi botiquín", "intent": "pastillero_stock"},
+  {"text": "¿Me queda algún comprimido de enalapril?", "intent": "pastillero_stock"},
+  {"text": "Mostrame el inventario de medicamentos", "intent": "pastillero_stock"},
+
+  {"text": "¿Ya tomé el remedio de hoy?", "intent": "consultar_si_tomo"},
+  {"text": "No recuerdo si tomé el enalapril esta mañana", "intent": "consultar_si_tomo"},
+  {"text": "Fijate si quedó registrada mi dosis de anoche", "intent": "consultar_si_tomo"},
+  {"text": "¿Hay constancia de que tomé mi medicación?", "intent": "consultar_si_tomo"},
+  {"text": "Confirmame si hoy tomé el medicamento", "intent": "consultar_si_tomo"},
+
+  {"text": "¿A qué hora anoté la última dosis de enalapril?", "intent": "consultar_tomas"},
+  {"text": "Buscá mis registros de medicación de ayer", "intent": "consultar_tomas"},
+  {"text": "Quiero ver cuándo fui tomando mis remedios", "intent": "consultar_tomas"},
+  {"text": "Mostrame las tomas recientes de ditropan", "intent": "consultar_tomas"},
+  {"text": "¿Qué medicamentos quedaron anotados esta semana?", "intent": "consultar_tomas"},
+
+  {"text": "Acabo de tomar una pastilla de enalapril, registralo", "intent": "registrar_toma"},
+  {"text": "Guardá que hoy tomé mi dosis", "intent": "registrar_toma"},
+  {"text": "Anotá una toma de clonazepam ahora", "intent": "registrar_toma"},
+  {"text": "Sumá dos comprimidos como tomados", "intent": "registrar_toma"},
+  {"text": "Quiero dejar asentado que ya tomé el remedio", "intent": "registrar_toma"},
+
+  {"text": "Cargá un medicamento nuevo en mi lista", "intent": "agregar_medicamento"},
+  {"text": "Quiero incorporar ibuprofeno al pastillero", "intent": "agregar_medicamento"},
+  {"text": "Dá de alta otra medicación", "intent": "agregar_medicamento"},
+  {"text": "Añadí un remedio nuevo llamado aspirina", "intent": "agregar_medicamento"},
+  {"text": "Necesito sumar un fármaco a mis medicamentos", "intent": "agregar_medicamento"},
+
+  {"text": "Pasá mi aviso de las pastillas para las nueve", "intent": "cambiar_horario_recordatorio"},
+  {"text": "Quiero que me notifiques la medicación a las 20:30", "intent": "cambiar_horario_recordatorio"},
+  {"text": "Mové el recordatorio de hoy para más tarde", "intent": "cambiar_horario_recordatorio"},
+  {"text": "Avisame para tomar el remedio a las ocho de la noche", "intent": "cambiar_horario_recordatorio"},
+  {"text": "Ajustá la hora en que me recordás las pastillas", "intent": "cambiar_horario_recordatorio"},
+
+  {"text": "Hola Astrana, ¿estás ahí?", "intent": "saludo"},
+  {"text": "Buenas, necesito una mano", "intent": "saludo"},
+  {"text": "Explicame qué cosas podés hacer", "intent": "saludo"},
+  {"text": "Quiero ver las opciones disponibles", "intent": "saludo"},
+  {"text": "Gracias, eso era todo", "intent": "saludo"}
+]

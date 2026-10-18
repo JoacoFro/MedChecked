@@ -1266,6 +1266,21 @@ def astrana_chat_api(request):
                 )
 
         intencion_para_ultima = str(intencion)
+        resultado_semantico = astrana.nlp_engine.clasificar_intencion_semantica(
+            texto_usuario,
+        )
+        if resultado_semantico:
+            import logging
+
+            intencion_semantica, similitud_semantica = resultado_semantico
+            logging.getLogger(__name__).info(
+                'Comparación NLP sombra de Astrana: activa=%s semántica=%s '
+                'similitud=%.4f coincide=%s',
+                intencion,
+                intencion_semantica,
+                similitud_semantica,
+                intencion == intencion_semantica,
+            )
         texto_normalizado = astrana.normalizar_texto(texto_usuario)
         medicamento_en_texto = _medicamento_pastillero_mencionado(texto_usuario)
         verbos_recarga = {'recargar', 'recarga', 'recargame', 'reponer', 'reponeme', 'agregar', 'agregale', 'sumar', 'sumale'}
