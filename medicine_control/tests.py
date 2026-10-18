@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from unittest.mock import patch
 import base64
 import json
@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test.utils import CaptureQueriesContext
 
 from medicine_control import views as medicine_views
 from medicine_control.models import (
@@ -30,6 +31,20 @@ from Astrana.webpush_utils import _cargar_clave_privada_vapid
 class AstranaPwaTests(TestCase):
 	def setUp(self):
 		self.client.defaults['wsgi.url_scheme'] = 'https'
+
+	def test_ping_returns_ok_without_database_queries(self):
+		with CaptureQueriesContext(connection) as queries:
+			response = self.client.get(reverse('ping'), secure=True)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json(), {'status': 'ok'})
+		self.assertEqual(len(queries), 0)
+		self.assertEqual(response['Cache-Control'], 'no-store')
+
+	def test_ping_only_allows_get(self):
+		response = self.client.post(reverse('ping'), secure=True)
+
+		self.assertEqual(response.status_code, 405)
 
 	def test_astrana_chat_renders_the_response_bubble_style(self):
 		response = self.client.get(reverse('astrana_pwa'), secure=True)

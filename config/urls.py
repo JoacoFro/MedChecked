@@ -1,11 +1,13 @@
 from django.contrib import admin
 from django.urls import path
+from config.health import ping
 from medicine_control import views  # Importamos el módulo completo para ser más ordenados
 from medicine_control.views import cron_monitoreo_sistema, pastillero_view
 from medicine_control.views import astrana_chat_api, astrana_chat_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('ping', ping, name='ping'),
     path('', views.home, name='home'),
     path('cargar/', views.cargar_insumo, name='cargar'),
     path('lista/', views.lista_insumos, name='lista'), 
