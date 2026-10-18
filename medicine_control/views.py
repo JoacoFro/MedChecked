@@ -549,6 +549,31 @@ def _limpiar_pedido_state(chat_id):
     ).delete()
 
 
+def _mensaje_catalogo_intenciones_aprendizaje():
+    from Astrana.nlp_engine import INTENT_LABELS
+    return '\n'.join(
+        f'{indice}. {etiqueta}'
+        for indice, etiqueta in enumerate(INTENT_LABELS.values(), start=1)
+    )
+
+
+def _es_confirmacion_afirmativa(texto):
+    return astrana_normalizar(texto) in {
+        'si', 'si aprende', 'si guardalo', 'confirmo', 'correcto', 'dale',
+    }
+
+
+def _es_confirmacion_negativa(texto):
+    return astrana_normalizar(texto) in {
+        'no', 'no guardes', 'cancelar', 'cancela', 'mejor no',
+    }
+
+
+def astrana_normalizar(texto):
+    from Astrana.nlp_engine import normalizar_texto
+    return normalizar_texto(texto).strip(' .!?')
+
+
 def _hora_recordatorio_pastillero(ahora, medicamento=None):
     preferencia = MemoriaAstrana.objects.filter(
         chat_id='principal',
@@ -991,6 +1016,8 @@ def astrana_chat_api(request):
         if not request.session.session_key:
             request.session.create()
         chat_id = f'web-{request.session.session_key}'
+        guardar_ultima_consulta = True
+        intencion_para_ultima = None
 
         def respuesta_con_historial(respuesta, status=200):
             historial = request.session.get('astrana_chat_history', [])
@@ -999,17 +1026,135 @@ def astrana_chat_api(request):
                 {'role': 'assistant', 'content': str(respuesta)},
             ])
             request.session['astrana_chat_history'] = historial[-100:]
+            if guardar_ultima_consulta and intencion_para_ultima:
+                request.session['astrana_ultima_consulta'] = {
+                    'frase': texto_usuario,
+                    'intencion': intencion_para_ultima,
+                }
             payload = {'reply': str(respuesta)}
             if transcripcion_usuario:
                 payload['transcription'] = transcripcion_usuario
             return JsonResponse(payload, status=status)
 
+        def proponer_aprendizaje(frase, intencion):
+            nonlocal guardar_ultima_consulta
+            from Astrana.nlp_engine import INTENT_LABELS
+
+            guardar_ultima_consulta = False
+            request.session['astrana_aprendizaje_pendiente'] = {
+                'etapa': 'confirmar',
+                'frase': frase,
+                'intencion': intencion,
+            }
+            etiqueta = INTENT_LABELS[intencion]
+            return respuesta_con_historial(
+                f'Puedo aprender para todos los chats que “{frase}” significa: '
+                f'{etiqueta}. ¿Querés que guarde este ejemplo y actualice mi clasificador? '
+                'Respondé “sí” o “no”.'
+            )
+
         texto_normalizado = astrana.normalizar_texto(texto_usuario)
+        aprendizaje_pendiente = request.session.get('astrana_aprendizaje_pendiente')
+        if aprendizaje_pendiente:
+            guardar_ultima_consulta = False
+            etapa = aprendizaje_pendiente.get('etapa')
+            if etapa == 'confirmar':
+                if _es_confirmacion_afirmativa(texto_usuario):
+                    astrana.nlp_engine.registrar_aprendizaje(
+                        aprendizaje_pendiente['frase'],
+                        aprendizaje_pendiente['intencion'],
+                    )
+                    del request.session['astrana_aprendizaje_pendiente']
+                    request.session['astrana_ultima_consulta'] = {
+                        'frase': aprendizaje_pendiente['frase'],
+                        'intencion': aprendizaje_pendiente['intencion'],
+                    }
+                    return respuesta_con_historial(
+                        '✅ Aprendido para todos los chats. Ya actualicé el clasificador local de Astrana. '
+                        'Podés repetir tu consulta para que la procese con lo aprendido.'
+                    )
+                if _es_confirmacion_negativa(texto_usuario):
+                    del request.session['astrana_aprendizaje_pendiente']
+                    return respuesta_con_historial('Entendido. No guardé ni entrené ese ejemplo.')
+                return respuesta_con_historial('¿Confirmás que guarde este ejemplo para todos? Respondé “sí” o “no”.')
+
+            if etapa == 'elegir_intencion':
+                intencion_elegida = astrana.nlp_engine.resolver_intencion_objetivo(texto_usuario)
+                if intencion_elegida:
+                    return proponer_aprendizaje(
+                        aprendizaje_pendiente['frase'],
+                        intencion_elegida,
+                    )
+                return respuesta_con_historial(
+                    'No pude identificar esa intención. Elegí un número o escribí una opción:\n'
+                    f'{_mensaje_catalogo_intenciones_aprendizaje()}'
+                )
+
+        coincidencia_ensenanza = re.match(
+            r'^\s*(?:astrana[, ]*)?(?:aprende|aprendé|enseñame|enséñame)\s+que\s+cuando\s+digo\s+["“]?(.+?)["”]?\s+(?:quiero|significa|es)\s+(.+?)\s*$',
+            texto_usuario,
+            re.IGNORECASE,
+        )
+        if coincidencia_ensenanza:
+            frase_ejemplo = coincidencia_ensenanza.group(1).strip(' "\'“”')
+            descripcion_intencion = coincidencia_ensenanza.group(2).strip()
+            intencion_elegida = astrana.nlp_engine.resolver_intencion_objetivo(
+                descripcion_intencion
+            )
+            if not intencion_elegida:
+                guardar_ultima_consulta = False
+                request.session['astrana_aprendizaje_pendiente'] = {
+                    'etapa': 'elegir_intencion',
+                    'frase': frase_ejemplo,
+                }
+                return respuesta_con_historial(
+                    '¿Qué querés que haga cuando use esa frase? Elegí un número o escribí una opción:\n'
+                    f'{_mensaje_catalogo_intenciones_aprendizaje()}'
+                )
+            return proponer_aprendizaje(frase_ejemplo, intencion_elegida)
+
+        ultima_consulta = request.session.get('astrana_ultima_consulta')
+        texto_correccion = re.sub(
+            r'^\s*(?:no[, ]*)?(?:yo\s+)?(?:quer[ií]a|quise|buscaba|necesitaba|'
+            r'era\s+que|en\s+realidad|te\s+equivocaste[, ]*)\s*',
+            '',
+            texto_usuario,
+            flags=re.IGNORECASE,
+        ).strip()
+        es_correccion = bool(
+            ultima_consulta
+            and texto_correccion != texto_usuario
+            and len(texto_correccion.split()) >= 2
+        )
+        if es_correccion:
+            guardar_ultima_consulta = False
+            intencion_elegida = astrana.nlp_engine.resolver_intencion_objetivo(
+                texto_correccion
+            )
+            if intencion_elegida:
+                return proponer_aprendizaje(
+                    ultima_consulta['frase'],
+                    intencion_elegida,
+                )
+            request.session['astrana_aprendizaje_pendiente'] = {
+                'etapa': 'elegir_intencion',
+                'frase': ultima_consulta['frase'],
+            }
+            return respuesta_con_historial(
+                'Entiendo que mi respuesta anterior no fue la que buscabas. '
+                '¿Qué intención correspondía a tu consulta? Elegí un número o escribí una opción:\n'
+                f'{_mensaje_catalogo_intenciones_aprendizaje()}'
+            )
+
+        intencion_aprendida = astrana.nlp_engine.intencion_aprendida(texto_usuario)
         intencion_regla = astrana.detectar_consulta_datos(texto_usuario)
-        if intencion_regla == 'ultimo_pedido':
+        if intencion_regla == 'aclarar_sondas':
+            intencion_regla = None
+        intencion_para_ultima = intencion_aprendida or intencion_regla
+        if intencion_para_ultima == 'ultimo_pedido':
             return respuesta_con_historial(astrana.consultar_ultimo_pedido_solicitado())
 
-        es_consulta_pastillero = intencion_regla in {
+        es_consulta_pastillero = (intencion_aprendida or intencion_regla) in {
             'ultimas_tomas_pastillero',
             'consultar_tomas',
             'verificar_toma_medicamento',
@@ -1096,7 +1241,10 @@ def astrana_chat_api(request):
         if comando_memoria:
             return respuesta_con_historial(comando_memoria)
 
-        intencion = astrana.detectar_consulta_con_memoria(chat_id, texto_usuario)
+        intencion = intencion_aprendida or astrana.detectar_consulta_con_memoria(
+            chat_id,
+            texto_usuario,
+        )
         if not intencion:
             intencion = intencion_regla
 
@@ -1105,7 +1253,19 @@ def astrana_chat_api(request):
             resultado_nlp = astrana.nlp_engine.interpretar(texto_usuario, chat_id=chat_id)
             intencion = resultado_nlp.intent
             entidades = resultado_nlp.entities or {}
+            if resultado_nlp.confidence < 0.25:
+                guardar_ultima_consulta = False
+                request.session['astrana_aprendizaje_pendiente'] = {
+                    'etapa': 'elegir_intencion',
+                    'frase': texto_usuario,
+                }
+                return respuesta_con_historial(
+                    'No estoy segura de qué necesitás hacer y prefiero preguntarte antes de adivinar. '
+                    'Elegí un número o escribí una opción:\n'
+                    f'{_mensaje_catalogo_intenciones_aprendizaje()}'
+                )
 
+        intencion_para_ultima = str(intencion)
         texto_normalizado = astrana.normalizar_texto(texto_usuario)
         medicamento_en_texto = _medicamento_pastillero_mencionado(texto_usuario)
         verbos_recarga = {'recargar', 'recarga', 'recargame', 'reponer', 'reponeme', 'agregar', 'agregale', 'sumar', 'sumale'}

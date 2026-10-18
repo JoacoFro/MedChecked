@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any, List, Tuple
+from django.db.models import Count, Max
 
 from rapidfuzz import process, fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -147,6 +148,14 @@ def extraer_hora_personalizada(texto: str) -> Optional[Tuple[int, int]]:
 # --- 2. DATASET DE ENTRENAMIENTO DE INTENCIONES ---
 
 INTENT_DATASET: Dict[str, List[str]] = {
+    'ultimo_pedido': [
+        'cuando hice el ultimo pedido',
+        'cual fue el ultimo pedido que hice',
+        'mostrame solamente el pedido mas reciente',
+        'fecha del pedido mas nuevo',
+        'cuando solicite por ultima vez',
+        'dame informacion solo del ultimo envio',
+    ],
     'consultar_stock': [
         'cuanto stock hay',
         'cuantas sondas me quedan',
@@ -373,6 +382,33 @@ INTENT_DATASET: Dict[str, List[str]] = {
     ],
 }
 
+INTENT_LABELS = {
+    'consultar_stock': 'Consultar stock de sondas',
+    'agregar_stock': 'Registrar ingreso de stock de sondas',
+    'quitar_stock': 'Registrar egreso o consumo de sondas',
+    'consultar_autonomia': 'Consultar autonomía de sondas',
+    'movimientos_sondas': 'Consultar historial de movimientos de sondas',
+    'consultar_tramites': 'Consultar estado o historial de envíos y trámites',
+    'ultimo_pedido': 'Consultar solo el pedido más reciente',
+    'iniciar_tramite': 'Iniciar un pedido o trámite',
+    'cerrar_tramite': 'Cerrar un trámite al recibir el pedido',
+    'pastillero_stock': 'Consultar stock de medicamentos del pastillero',
+    'consultar_si_tomo': 'Verificar si tomé un medicamento',
+    'consultar_tomas': 'Consultar historial o últimas tomas de un medicamento',
+    'registrar_toma': 'Registrar que tomé un medicamento',
+    'agregar_medicamento': 'Agregar un medicamento al pastillero',
+    'cambiar_horario_recordatorio': 'Cambiar horario de un recordatorio',
+    'saludo': 'Saludar o pedir ayuda',
+}
+
+INTENT_ALIASES = {
+    'stock_sondas': 'consultar_stock',
+    'autonomia_sondas': 'consultar_autonomia',
+    'movimientos_tramites': 'consultar_tramites',
+    'ultimas_tomas_pastillero': 'consultar_tomas',
+    'verificar_toma_medicamento': 'consultar_si_tomo',
+}
+
 @dataclass
 class NLPResult:
     intent: str
@@ -385,7 +421,19 @@ class NLPResult:
 class NLPEngine:
     def __init__(self):
         self.pipeline: Optional[Pipeline] = None
+        self._version_aprendizajes = None
+        self._frases_aprendidas: Dict[str, str] = {}
         self._entrenar_clasificador()
+
+    @staticmethod
+    def _version_actual_aprendizajes():
+        from medicine_control.models import AprendizajeAstrana
+
+        return AprendizajeAstrana.objects.filter(
+            chat_id='global',
+            confirmado=True,
+            intencion__in=INTENT_DATASET,
+        ).aggregate(cantidad=Count('id'), ultima=Max('fecha'))
 
     def _entrenar_clasificador(self):
         """Entrena el modelo local TF-IDF + LogisticRegression."""
@@ -399,18 +447,26 @@ class NLPEngine:
                     textos.append(texto_norm)
                     etiquetas.append(intencion)
 
-        try:
-            from medicine_control.models import AprendizajeAstrana
-            aprendizajes = AprendizajeAstrana.objects.filter(confirmado=True)
-            for ap in aprendizajes:
-                if not ap.intencion or not ap.frase:
-                    continue
-                texto_norm = normalizar_texto(ap.frase)
-                if texto_norm:
-                    textos.append(texto_norm)
-                    etiquetas.append(ap.intencion)
-        except Exception:
-            pass
+        from medicine_control.models import AprendizajeAstrana
+        aprendizajes = list(AprendizajeAstrana.objects.filter(
+            chat_id='global',
+            confirmado=True,
+            intencion__in=INTENT_DATASET,
+        ).only('frase', 'intencion', 'fecha'))
+        for aprendizaje in aprendizajes:
+            texto_norm = normalizar_texto(aprendizaje.frase)
+            if texto_norm:
+                textos.append(texto_norm)
+                etiquetas.append(aprendizaje.intencion)
+        self._frases_aprendidas = {
+            normalizar_texto(aprendizaje.frase): aprendizaje.intencion
+            for aprendizaje in aprendizajes
+            if normalizar_texto(aprendizaje.frase)
+        }
+        self._version_aprendizajes = {
+            'cantidad': len(aprendizajes),
+            'ultima': max((aprendizaje.fecha for aprendizaje in aprendizajes), default=None),
+        }
 
         if not textos:
             logger.warning("No hay muestras para entrenar el NLP local; se deja el modelo sin datos.")
@@ -431,43 +487,100 @@ class NLPEngine:
         self.pipeline.fit(textos, etiquetas)
         logger.info("Motor NLP local entrenado exitosamente con %d muestras.", len(textos))
 
-    def registrar_aprendizaje(self, frase: str, intencion: str, chat_id: str = 'principal', confirmado: bool = True):
-        """Guarda una frase confirmada por el usuario y vuelve a entrenar el modelo."""
-        if not frase or not intencion:
-            return None
-
+    def registrar_aprendizaje(self, frase: str, intencion: str):
+        """Guarda un ejemplo global confirmado y reentrena el clasificador local."""
         frase_limpia = frase.strip()
-        if not frase_limpia:
-            return None
+        if not frase_limpia or intencion not in INTENT_DATASET:
+            raise ValueError('La frase o la intención de aprendizaje no es válida.')
 
-        try:
-            from medicine_control.models import AprendizajeAstrana
-            aprendizaje, _ = AprendizajeAstrana.objects.get_or_create(
-                chat_id=str(chat_id),
-                frase=frase_limpia,
-                intencion=intencion,
-                defaults={'confirmado': confirmado},
-            )
-            aprendizaje.confirmado = confirmado
+        from medicine_control.models import AprendizajeAstrana
+        aprendizaje, _ = AprendizajeAstrana.objects.get_or_create(
+            chat_id='global',
+            frase=frase_limpia,
+            intencion=intencion,
+            defaults={'confirmado': True},
+        )
+        if not aprendizaje.confirmado:
+            aprendizaje.confirmado = True
             aprendizaje.save(update_fields=['confirmado'])
-            self.reentrenar()
-            return aprendizaje
-        except Exception:
-            logger.exception("No se pudo registrar el aprendizaje del NLP local.")
-            return None
+        self.reentrenar()
+        return aprendizaje
 
     def reentrenar(self):
         """Permite reentrenar en caliente si se agregan nuevos aprendizajes."""
         self._entrenar_clasificador()
 
+    def actualizar_si_hay_aprendizajes_nuevos(self):
+        """Sincroniza el modelo del proceso cuando otro worker guardó ejemplos."""
+        version = self._version_actual_aprendizajes()
+        if version != self._version_aprendizajes:
+            self.reentrenar()
+
+    def intencion_aprendida(self, texto: str) -> Optional[str]:
+        self.actualizar_si_hay_aprendizajes_nuevos()
+        return self._frases_aprendidas.get(normalizar_texto(texto))
+
+    def resolver_intencion_objetivo(self, texto: str) -> Optional[str]:
+        """Resuelve una descripción o alias de intención para el flujo de enseñanza."""
+        norm = normalizar_texto(texto)
+        if not norm:
+            return None
+        if norm.isdigit():
+            indice = int(norm) - 1
+            intenciones = list(INTENT_LABELS)
+            if 0 <= indice < len(intenciones):
+                return intenciones[indice]
+
+        if norm in INTENT_ALIASES:
+            return INTENT_ALIASES[norm]
+        for intencion, etiqueta in INTENT_LABELS.items():
+            if norm in {normalizar_texto(intencion), normalizar_texto(etiqueta)}:
+                return intencion
+
+        stopwords = {'a', 'al', 'con', 'de', 'del', 'el', 'en', 'la', 'las', 'los', 'para', 'un', 'una'}
+        palabras_objetivo = set(norm.split()) - stopwords
+        coincidencias_etiqueta = []
+        for intencion, etiqueta in INTENT_LABELS.items():
+            palabras_etiqueta = set(normalizar_texto(etiqueta).split()) - stopwords
+            coincidencias = palabras_objetivo & palabras_etiqueta
+            minimo = 1 if len(palabras_etiqueta) == 1 else 2
+            puntaje = len(coincidencias) / len(palabras_etiqueta)
+            if len(coincidencias) >= minimo and puntaje >= 0.7:
+                coincidencias_etiqueta.append((puntaje, intencion))
+        if coincidencias_etiqueta:
+            coincidencias_etiqueta.sort(reverse=True)
+            if (
+                len(coincidencias_etiqueta) == 1
+                or coincidencias_etiqueta[0][0] > coincidencias_etiqueta[1][0]
+            ):
+                return coincidencias_etiqueta[0][1]
+
+        from Astrana import main as astrana
+        intencion_regla = astrana.detectar_consulta_datos(texto)
+        if intencion_regla:
+            intencion_regla = INTENT_ALIASES.get(intencion_regla, intencion_regla)
+            if intencion_regla in INTENT_DATASET:
+                return intencion_regla
+
+        self.actualizar_si_hay_aprendizajes_nuevos()
+        intencion, confianza = self.clasificar_intencion(texto)
+        if confianza >= 0.45:
+            intencion = INTENT_ALIASES.get(intencion, intencion)
+            return intencion if intencion in INTENT_DATASET else None
+        return None
+
     def clasificar_intencion(self, texto: str) -> Tuple[str, float]:
         """Clasifica la intención del texto normalizado y devuelve (intención, probabilidad)."""
+        self.actualizar_si_hay_aprendizajes_nuevos()
         if not self.pipeline:
             self._entrenar_clasificador()
 
         norm = normalizar_texto(texto)
         if not norm:
             return 'saludo', 1.0
+        intencion_aprendida = self._frases_aprendidas.get(norm)
+        if intencion_aprendida:
+            return intencion_aprendida, 1.0
 
         probs = self.pipeline.predict_proba([norm])[0]
         max_idx = probs.argmax()
@@ -624,4 +737,3 @@ class NLPEngine:
 
 # Instancia global única
 nlp_engine = NLPEngine()
-

@@ -105,16 +105,6 @@ def guardar_memoria(chat_id, categoria, clave, valor):
     return memoria
 
 
-def registrar_aprendizaje(chat_id, frase, intencion, respuesta=''):
-    return AprendizajeAstrana.objects.create(
-        chat_id=str(chat_id),
-        frase=frase,
-        intencion=intencion,
-        respuesta=respuesta,
-        confirmado=True,
-    )
-
-
 def interpretar_aclaracion_sondas(texto):
     palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto)))
     if palabras & {'stock', 'disponible', 'cantidad'}:
@@ -129,7 +119,7 @@ def interpretar_aclaracion_sondas(texto):
 
 
 def detectar_consulta_con_memoria(chat_id, texto_usuario):
-    """Busca aprendizajes confirmados del chat antes de usar reglas generales."""
+    """Busca alias confirmados del chat antes de usar el clasificador compartido."""
     texto = normalizar_texto(texto_usuario)
     palabras_texto = set(re.findall(r'\b\w+\b', texto))
     if not palabras_texto:
@@ -142,22 +132,7 @@ def detectar_consulta_con_memoria(chat_id, texto_usuario):
         palabras_frase = set(re.findall(r'\b\w+\b', normalizar_texto(memoria.clave)))
         if palabras_frase and palabras_frase.issubset(palabras_texto):
             return memoria.valor
-
-    aprendizajes = AprendizajeAstrana.objects.filter(
-        chat_id=str(chat_id), confirmado=True
-    ).order_by('-fecha')
-    mejor_intencion = None
-    mejor_puntaje = 0
-    for aprendizaje in aprendizajes:
-        palabras_frase = set(re.findall(r'\b\w+\b', normalizar_texto(aprendizaje.frase)))
-        if not palabras_frase:
-            continue
-        coincidencias = len(palabras_texto & palabras_frase)
-        puntaje = coincidencias / len(palabras_frase)
-        if puntaje >= 0.6 and puntaje > mejor_puntaje:
-            mejor_puntaje = puntaje
-            mejor_intencion = aprendizaje.intencion
-    return mejor_intencion
+    return None
 
 
 def intencion_desde_regla(texto):
@@ -183,7 +158,7 @@ def procesar_comando_memoria(chat_id, texto_usuario):
             chat_id=str(chat_id), activa=True, confirmada=True
         ).order_by('-fecha_actualizacion')[:20]
         aprendizajes = AprendizajeAstrana.objects.filter(
-            chat_id=str(chat_id), confirmado=True
+            chat_id='global', confirmado=True
         ).order_by('-fecha')[:20]
         if not memorias and not aprendizajes:
             return 'Todavía no tengo recuerdos guardados sobre este chat.'
@@ -200,7 +175,6 @@ def procesar_comando_memoria(chat_id, texto_usuario):
         if not intencion:
             return 'Puedo aprender reglas sobre stock, movimientos, trámites o pastillero. ¿Qué consulta querés asociar?'
         guardar_memoria(chat_id, 'alias', frase, intencion)
-        registrar_aprendizaje(chat_id, frase, intencion, significado)
         return f'✅ Lo voy a recordar: cuando digas “{frase}”, entenderé “{significado}”.'
 
     patron_olvidar = re.search(r'(?:olvida|olvidá|olvidar) (?:que )?(?:cuando digo )?(.+)$', texto)

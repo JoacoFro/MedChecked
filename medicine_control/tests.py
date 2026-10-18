@@ -15,6 +15,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from medicine_control import views as medicine_views
 from medicine_control.models import (
 	Envio,
+	AprendizajeAstrana,
 	IngresoPastillero,
 	Insumo,
 	MemoriaAstrana,
@@ -188,6 +189,94 @@ class AstranaPwaTests(TestCase):
 		self.assertNotIn('Ditropan', response.json()['reply'])
 		self.assertNotIn('Enalapril', response.json()['reply'])
 
+	def test_chat_learns_a_confirmed_correction_for_all_users(self):
+		from Astrana.nlp_engine import NLPEngine, nlp_engine
+
+		otro_worker_engine = NLPEngine()
+		Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=4,
+			unidades_por_caja=30,
+			consumo_diario=8,
+		)
+		frase_original = 'como estamos de stock'
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': frase_original},
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'No, quería consultar la autonomía de las sondas'},
+			secure=True,
+		)
+		self.assertIn('¿Querés que guarde', response.json()['reply'])
+		self.assertEqual(
+			AprendizajeAstrana.objects.filter(chat_id='global', frase=frase_original).count(),
+			0,
+		)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'sí'},
+			secure=True,
+		)
+		self.assertIn('Aprendido para todos', response.json()['reply'])
+		self.assertEqual(
+			AprendizajeAstrana.objects.get(chat_id='global', frase=frase_original).intencion,
+			'consultar_autonomia',
+		)
+		self.assertEqual(nlp_engine.intencion_aprendida(frase_original), 'consultar_autonomia')
+		self.assertEqual(
+			otro_worker_engine.intencion_aprendida(frase_original),
+			'consultar_autonomia',
+		)
+
+		otro_usuario = self.client_class()
+		response = otro_usuario.post(
+			reverse('astrana_chat_api'),
+			{'message': frase_original},
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('autonomía', response.json()['reply'].lower())
+
+	def test_low_confidence_query_asks_for_intent_before_training(self):
+		from Astrana.nlp_engine import INTENT_LABELS
+
+		frase = 'quasar infinito de los cristales rojos'
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': frase},
+			secure=True,
+		)
+		self.assertIn('prefiero preguntarte', response.json()['reply'])
+		self.assertEqual(
+			AprendizajeAstrana.objects.filter(chat_id='global', frase=frase).count(),
+			0,
+		)
+
+		indice_autonomia = list(INTENT_LABELS).index('consultar_autonomia') + 1
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': str(indice_autonomia)},
+			secure=True,
+		)
+		self.assertIn('¿Querés que guarde', response.json()['reply'])
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'confirmo'},
+			secure=True,
+		)
+
+		self.assertEqual(
+			AprendizajeAstrana.objects.get(chat_id='global', frase=frase).intencion,
+			'consultar_autonomia',
+		)
+
 	def test_chat_tramite_history_does_not_call_missing_handlers(self):
 		Envio.objects.create(tipo='backup', estado='recibido', cantidad_pedida=30)
 
@@ -199,7 +288,37 @@ class AstranaPwaTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertIn('Últimos', response.json()['reply'])
-		self.assertIn('Back Up', response.json()['reply'])
+		self.assertIn('Back Up', response.json()['reply']		)
+
+	def test_explicit_teaching_command_requires_confirmation(self):
+		frase = 'mi reserva se está terminando'
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{
+				'message': (
+					f'Enseñame que cuando digo "{frase}" quiero consultar autonomía de sondas'
+				)
+			},
+			secure=True,
+		)
+
+		self.assertIn('¿Querés que guarde', response.json()['reply'])
+		self.assertEqual(
+			AprendizajeAstrana.objects.filter(chat_id='global', frase=frase).count(),
+			0,
+		)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'confirmo'},
+			secure=True,
+		)
+		self.assertIn('Aprendido para todos', response.json()['reply'])
+		self.assertEqual(
+			AprendizajeAstrana.objects.get(chat_id='global', frase=frase).intencion,
+			'consultar_autonomia',
+		)
 
 	def test_pwa_order_flow_requests_type_then_quantity_and_closes_when_received(self):
 		insumo = Insumo.objects.create(
