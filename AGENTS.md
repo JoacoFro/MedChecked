@@ -2,7 +2,7 @@
 
 ## Contexto del proyecto
 
-Este repositorio es una aplicación Django para control de stock de medicamentos, con una PWA de Astrana. La lógica principal del dominio está en `medicine_control`, mientras que `Astrana/` contiene el motor de asistencia/NLP y las herramientas compartidas por la PWA.
+Este repositorio es una aplicación Django para control de stock de medicamentos, con una capa web y un bot de Telegram. La lógica principal del dominio está en `medicine_control`, mientras que `Astrana/` contiene un motor de asistencia/NLP y `bot_interactivo.py` es el punto de entrada del bot Telegram.
 
 ## Estructura importante
 
@@ -11,8 +11,9 @@ Este repositorio es una aplicación Django para control de stock de medicamentos
 - `medicine_control/models.py`: modelos del dominio: `Insumo`, `Pedido`, `Salida`, `Envio`, `Pastillero`, etc.
 - `medicine_control/views.py`: lógica de negocio, cálculos de stock y endpoints.
 - `medicine_control/templates/medicine_control/`: templates HTML de la UI.
-- `Astrana/main.py`: herramientas y lógica compartidas por la PWA de Astrana.
+- `Astrana/main.py`: flujo principal de la asistente Astrana.
 - `Astrana/nlp_engine.py`: interpretador/engine de lenguaje natural.
+- `bot_interactivo.py`: bot de Telegram interactivo.
 - `manage.py`: comando principal de Django.
 
 ## Comandos frecuentes
@@ -21,6 +22,7 @@ Este repositorio es una aplicación Django para control de stock de medicamentos
 - Migraciones: `python manage.py makemigrations` y `python manage.py migrate`
 - Ejecutar servidor local: `python manage.py runserver`
 - Ejecutar tests: `python manage.py test`
+- Entrar en el bot Telegram: `python bot_interactivo.py`
 - Crear superusuario: `python create_admin.py`
 
 ## Convenciones del códigobase
@@ -36,7 +38,7 @@ Este repositorio es una aplicación Django para control de stock de medicamentos
 ## Reglas para tareas de código
 
 - Priorizar cambios pequeños y específicos sobre refactors grandes.
-- Si se agrega funcionalidad de Astrana, mantener la compatibilidad con los modelos y la base de datos existente.
+- Si se agrega funcionalidad de bot o Astrana, mantener la compatibilidad con los modelos y la base de datos existente.
 - Para cambios de UI, revisar primero los templates y el contexto que les pasa `views.py`.
 - Para cambios de negocio, validar el flujo en modelos/vistas y no solo en el frontend.
 - Mantener SQL y queries simples; este proyecto usa Django ORM y modelos concretos.
@@ -49,4 +51,4 @@ Este repositorio es una aplicación Django para control de stock de medicamentos
 
 ## Objetivo general
 
-Ayudar a que un agente de IA entienda rápidamente la estructura del proyecto, las normas del dominio y los puntos clave para iterar sin romper la lógica del control de stock ni la integración con la PWA de Astrana.
+Ayudar a que un agente de IA entienda rápidamente la estructura del proyecto, las normas del dominio y los puntos clave para iterar sin romper la lógica del control de stock ni la integración con Telegram/Astrana.
