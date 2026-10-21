@@ -228,6 +228,13 @@ INTENT_DATASET: Dict[str, List[str]] = {
         'reporte de autonomia',
         'cuanto tiempo de stock tengo',
     ],
+    'consultar_consumo': [
+        'cuanto consumo diario de sondas tengo',
+        'cual es el consumo de sondas',
+        'cuantas sondas consumimos por dia',
+        'mostrame el promedio de consumo de sondas',
+        'cuanto gastamos de sondas diariamente',
+    ],
     'movimientos_sondas': [
         'ultimos movimientos de sondas',
         'historial de ingresos y egresos de sondas',
@@ -388,6 +395,7 @@ INTENT_LABELS = {
     'agregar_stock': 'Registrar ingreso de stock de sondas',
     'quitar_stock': 'Registrar egreso o consumo de sondas',
     'consultar_autonomia': 'Consultar autonomía de sondas',
+    'consultar_consumo': 'Consultar consumo diario de sondas',
     'movimientos_sondas': 'Consultar historial de movimientos de sondas',
     'consultar_tramites': 'Consultar estado o historial de envíos y trámites',
     'ultimo_pedido': 'Consultar solo el pedido más reciente',
@@ -405,6 +413,7 @@ INTENT_LABELS = {
 INTENT_ALIASES = {
     'stock_sondas': 'consultar_stock',
     'autonomia_sondas': 'consultar_autonomia',
+    'consumo_sondas': 'consultar_consumo',
     'movimientos_tramites': 'consultar_tramites',
     'ultimas_tomas_pastillero': 'consultar_tomas',
     'verificar_toma_medicamento': 'consultar_si_tomo',

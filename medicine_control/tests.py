@@ -23,6 +23,7 @@ from medicine_control.models import (
 	MemoriaAstrana,
 	Pastillero,
 	Pedido,
+	Salida,
 	TomaPastillero,
 )
 from Astrana.webpush_utils import _cargar_clave_privada_vapid
@@ -181,6 +182,36 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(history_response.status_code, 200)
 		self.assertEqual([message['role'] for message in messages], ['user', 'assistant'])
 		self.assertEqual(messages[0]['content'], 'hola astrana')
+
+	def test_chat_reports_the_existing_daily_probe_consumption_metric(self):
+		insumo = Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=4,
+			unidades_por_caja=30,
+		)
+		Salida.objects.create(
+			insumo=insumo,
+			cantidad=126,
+			tipo_stock='stock_normal',
+		)
+		antigua = Salida.objects.create(
+			insumo=insumo,
+			cantidad=900,
+			tipo_stock='stock_normal',
+		)
+		Salida.objects.filter(pk=antigua.pk).update(
+			fecha=timezone.now() - timedelta(days=15),
+		)
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': '¿Cuál es el consumo diario de sondas?'},
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('últimos 14 días', response.json()['reply'])
+		self.assertIn('últimos 14 días', response.json()['reply'])
 
 	def test_chat_reports_latest_order_date_even_if_order_flow_is_waiting(self):
 		fecha_base = timezone.localdate() - timedelta(days=10)

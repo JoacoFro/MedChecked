@@ -9,6 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import django
 from django.db import IntegrityError, connection, transaction
+from django.utils.formats import number_format
 from django.utils import timezone
 
 # --- 1. PUENTE Y CONFIGURACIÓN CON DJANGO ---
@@ -30,6 +31,7 @@ from medicine_control.models import (
     MemoriaAstrana,
     AprendizajeAstrana,
 )
+from medicine_control.metrics import consumo_diario_estimado
 from medicine_control.pastillero_services import (
     medicamentos_pendientes_ids,
     registrar_toma_recordatorio,
@@ -86,6 +88,21 @@ def consultar_stock_sondas():
         return f'Error al consultar el stock de Sondas: {error}'
 
 
+def consultar_consumo_sondas():
+    """Devuelve la métrica diaria de consumo que muestra MedChecked."""
+    try:
+        connection.close_if_unusable_or_obsolete()
+        if not Insumo.objects.filter(nombre__icontains='sonda').exists():
+            return 'No hay Sondas registradas.'
+        consumo = consumo_diario_estimado()
+        return (
+            f'📈 Consumo IA: {number_format(consumo, 1)} Sondas / día '
+            '(promedio de los últimos 14 días).'
+        )
+    except Exception as error:
+        return f'Error al consultar el consumo de Sondas: {error}'
+
+
 def obtener_memoria(chat_id):
     return {
         memoria.clave: memoria.valor
@@ -111,6 +128,8 @@ def interpretar_aclaracion_sondas(texto):
         return 'stock_sondas'
     if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
         return 'movimientos_sondas'
+    if palabras & {'consumo', 'consumos', 'consumimos', 'gastamos', 'promedio'}:
+        return 'consultar_consumo'
     if palabras & {'autonomia', 'dias', 'duracion', 'alcance'}:
         return 'autonomia_sondas'
     if palabras & {'envio', 'envios', 'tramite', 'tramites', 'pedido', 'pedidos'}:
@@ -140,6 +159,8 @@ def intencion_desde_regla(texto):
     if 'sonda' in palabras or 'sondas' in palabras:
         if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
             return 'movimientos_sondas'
+        if palabras & {'consumo', 'consumos', 'consumimos', 'gastamos', 'promedio', 'diario'}:
+            return 'consultar_consumo'
         if palabras & {'autonomia', 'dias', 'duracion'}:
             return 'autonomia_sondas'
         if palabras & {'stock', 'cantidad', 'disponible'}:
@@ -728,10 +749,11 @@ if GEMINI_API_KEY and genai is not None:
             system_instruction=(
                 'Sos Astrana. Te llamás Astrana y ayudás a gestionar el stock real. '
                 'Nunca inventes cantidades: usa las herramientas disponibles. '
-                'Para Sondas usa las herramientas de stock; no mezcles Sondas con Pastillero.'
+                'Para Sondas usa las herramientas de stock y consumo; no mezcles Sondas con Pastillero.'
             ),
             tools=[
                 consultar_estado_stock,
+                consultar_consumo_sondas,
                 consultar_ultimos_movimientos_sondas,
                 registrar_movimiento,
                 obtener_resumen_pedidos,
@@ -781,6 +803,11 @@ def detectar_consulta_datos(texto_usuario):
     })
     if habla_de_sondas and habla_de_movimientos:
         return 'movimientos_sondas'
+
+    if habla_de_sondas and palabras & {
+        'consumo', 'consumos', 'consumimos', 'gastamos', 'promedio', 'diario',
+    }:
+        return 'consultar_consumo'
 
     if habla_de_sondas and bool(palabras & {
         'reporte', 'informacion', 'información', 'stock', 'estado',

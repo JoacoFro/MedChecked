@@ -23,6 +23,12 @@
   {"text": "Necesito ver mi cobertura de insumos", "intent": "consultar_autonomia"},
   {"text": "¿Cuándo tendría que volver a pedir sondas?", "intent": "consultar_autonomia"},
 
+  {"text": "¿Cuál es el consumo diario registrado de sondas?", "intent": "consultar_consumo"},
+  {"text": "Decime cuántas sondas gasto por día", "intent": "consultar_consumo"},
+  {"text": "¿Qué promedio de consumo tienen las sondas?", "intent": "consultar_consumo"},
+  {"text": "Mostrame la métrica de consumo de sondas", "intent": "consultar_consumo"},
+  {"text": "¿Cuánto estamos consumiendo de sondas últimamente?", "intent": "consultar_consumo"},
+
   {"text": "¿Qué entradas y consumos de sondas anoté?", "intent": "movimientos_sondas"},
   {"text": "Quiero revisar los cambios anteriores del inventario", "intent": "movimientos_sondas"},
   {"text": "Mostrame las operaciones registradas sobre las sondas", "intent": "movimientos_sondas"},

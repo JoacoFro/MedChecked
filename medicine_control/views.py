@@ -14,6 +14,7 @@ import re
 import requests
 from django.http import JsonResponse
 from .models import Insumo, Envio, MemoriaAstrana, Pastillero, TomaPastillero
+from .metrics import consumo_diario_estimado
 from django.contrib import messages
 from django.shortcuts import render, redirect
 import os
@@ -36,12 +37,7 @@ def home(request):
 
     # Lógica de consumo IA
     ahora = datetime.now()
-    hace_dos_semanas = ahora - timedelta(days=14)
-    salidas_recientes = Salida.objects.filter(fecha__gte=hace_dos_semanas)
-    unidades_consumidas = salidas_recientes.aggregate(Sum('cantidad'))['cantidad__sum'] or 0
-    
-    promedio_ia = unidades_consumidas / 14
-    consumo_final = max(promedio_ia, 8) 
+    consumo_final = consumo_diario_estimado()
     
     # Estado de stock y autonomía
     techo_fijo = 400
@@ -125,12 +121,7 @@ def lista_insumos(request):
     total_cajas_normal = sum(i.stock_actual_cajas for i in insumos_qs)
     
     # Lógica de Consumo IA (Promedio 14 días)
-    hace_dos_semanas = datetime.now() - timedelta(days=14)
-    salidas_recientes = Salida.objects.filter(fecha__gte=hace_dos_semanas)
-    unidades_consumidas = salidas_recientes.aggregate(Sum('cantidad'))['cantidad__sum'] or 0
-    
-    promedio_ia = unidades_consumidas / 14
-    consumo_final = max(promedio_ia, 8)
+    consumo_final = consumo_diario_estimado()
     
     # Cálculos de Autonomía Desglosada
     autonomia_total = int(total_unidades // consumo_final) if consumo_final > 0 else 0
@@ -1354,6 +1345,8 @@ def astrana_chat_api(request):
             respuesta = astrana.consultar_ultimo_pedido_solicitado()
         elif intencion == 'consultar_stock':
             respuesta = astrana.consultar_estado_stock()
+        elif intencion == 'consultar_consumo':
+            respuesta = astrana.consultar_consumo_sondas()
         elif intencion == 'consultar_autonomia':
             respuesta = astrana.consultar_autonomia_sondas()
         elif intencion == 'movimientos_sondas':
