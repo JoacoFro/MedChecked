@@ -75,6 +75,28 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(len(evaluation_phrases), len(set(evaluation_phrases)))
 		self.assertFalse(set(evaluation_phrases) & training_phrases)
 
+	def test_local_intent_classifier_is_bounded_without_losing_evaluation_accuracy(self):
+		from Astrana.nlp_engine import NLPEngine, normalizar_texto
+
+		evaluation_path = Path(__file__).resolve().parents[1] / 'Astrana' / 'intent_evaluation.json'
+		examples = json.loads(evaluation_path.read_text(encoding='utf-8'))
+		engine = NLPEngine()
+		engine.clasificar_intencion('frase de fallback sin reglas directas')
+
+		classifier = engine.pipeline.named_steps['clf']
+		predicciones = engine.pipeline.predict([
+			normalizar_texto(example['text'])
+			for example in examples
+		])
+		aciertos = sum(
+			prediccion == example['intent']
+			for prediccion, example in zip(predicciones, examples)
+		)
+
+		self.assertEqual(classifier.solver, 'saga')
+		self.assertLessEqual(classifier.max_iter, 100)
+		self.assertGreaterEqual(aciertos / len(examples), 0.70)
+
 	@patch.dict('os.environ', {'ASTRANA_SEMANTIC_SHADOW': '0'})
 	def test_semantic_shadow_is_disabled_by_default(self):
 		from Astrana.nlp_engine import NLPEngine
@@ -184,6 +206,8 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(messages[0]['content'], 'hola astrana')
 
 	def test_chat_reports_the_existing_daily_probe_consumption_metric(self):
+		from Astrana.nlp_engine import nlp_engine
+
 		insumo = Insumo.objects.create(
 			nombre='Sondas',
 			stock_actual_cajas=4,
@@ -203,14 +227,21 @@ class AstranaPwaTests(TestCase):
 			fecha=timezone.now() - timedelta(days=15),
 		)
 
-		response = self.client.post(
-			reverse('astrana_chat_api'),
-			{'message': '¿Cuál es el consumo diario de sondas?'},
-			secure=True,
-		)
+		with (
+			patch.object(nlp_engine, 'pipeline', None),
+			patch.object(nlp_engine, '_version_aprendizajes', None),
+			patch.object(nlp_engine, '_frases_aprendidas', {}),
+			patch.object(nlp_engine, '_entrenar_clasificador') as entrenar,
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': '¿Cuál es el consumo diario de sondas?'},
+				secure=True,
+			)
+			entrenar.assert_not_called()
+
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.status_code, 200)
-		self.assertIn('últimos 14 días', response.json()['reply'])
+		self.assertIn('9,0 sondas / día', response.json()['reply'].lower())
 		self.assertIn('últimos 14 días', response.json()['reply'])
 
 	def test_chat_reports_latest_order_date_even_if_order_flow_is_waiting(self):

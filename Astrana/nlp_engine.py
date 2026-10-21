@@ -1,18 +1,17 @@
+from __future__ import annotations
+
 import os
 import re
 import unicodedata
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, date
-from typing import Optional, Dict, Any, List, Tuple
+from datetime import timedelta, date
+from typing import TYPE_CHECKING, Optional, Dict, Any, List, Tuple
 from django.db.models import Count, Max
 
-from rapidfuzz import process, fuzz
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
+if TYPE_CHECKING:
+    from sklearn.pipeline import Pipeline
 
-import django
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -438,7 +437,6 @@ class NLPEngine:
         self._semantic_labels: List[str] = []
         self._semantic_version_aprendizajes = None
         self._semantic_error_logged = False
-        self._entrenar_clasificador()
 
     @staticmethod
     def semantic_shadow_enabled() -> bool:
@@ -510,6 +508,10 @@ class NLPEngine:
 
     def _entrenar_clasificador(self):
         """Entrena el modelo local TF-IDF + LogisticRegression."""
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import Pipeline
+
         textos = []
         etiquetas = []
 
@@ -520,26 +522,12 @@ class NLPEngine:
                     textos.append(texto_norm)
                     etiquetas.append(intencion)
 
-        from medicine_control.models import AprendizajeAstrana
-        aprendizajes = list(AprendizajeAstrana.objects.filter(
-            chat_id='global',
-            confirmado=True,
-            intencion__in=INTENT_DATASET,
-        ).only('frase', 'intencion', 'fecha'))
+        aprendizajes = self._cargar_aprendizajes()
         for aprendizaje in aprendizajes:
             texto_norm = normalizar_texto(aprendizaje.frase)
             if texto_norm:
                 textos.append(texto_norm)
                 etiquetas.append(aprendizaje.intencion)
-        self._frases_aprendidas = {
-            normalizar_texto(aprendizaje.frase): aprendizaje.intencion
-            for aprendizaje in aprendizajes
-            if normalizar_texto(aprendizaje.frase)
-        }
-        self._version_aprendizajes = {
-            'cantidad': len(aprendizajes),
-            'ultima': max((aprendizaje.fecha for aprendizaje in aprendizajes), default=None),
-        }
 
         if not textos:
             logger.warning("No hay muestras para entrenar el NLP local; se deja el modelo sin datos.")
@@ -552,13 +540,35 @@ class NLPEngine:
                 strip_accents='unicode'
             )),
             ('clf', LogisticRegression(
-                max_iter=1000,
+                solver='saga',
+                max_iter=100,
+                tol=1e-2,
                 class_weight='balanced',
-                C=2.0
+                C=2.0,
+                random_state=0,
             ))
         ])
         self.pipeline.fit(textos, etiquetas)
         logger.info("Motor NLP local entrenado exitosamente con %d muestras.", len(textos))
+
+    def _cargar_aprendizajes(self):
+        from medicine_control.models import AprendizajeAstrana
+
+        aprendizajes = list(AprendizajeAstrana.objects.filter(
+            chat_id='global',
+            confirmado=True,
+            intencion__in=INTENT_DATASET,
+        ).only('frase', 'intencion', 'fecha'))
+        self._frases_aprendidas = {
+            normalizar_texto(aprendizaje.frase): aprendizaje.intencion
+            for aprendizaje in aprendizajes
+            if normalizar_texto(aprendizaje.frase)
+        }
+        self._version_aprendizajes = {
+            'cantidad': len(aprendizajes),
+            'ultima': max((aprendizaje.fecha for aprendizaje in aprendizajes), default=None),
+        }
+        return aprendizajes
 
     def registrar_aprendizaje(self, frase: str, intencion: str):
         """Guarda un ejemplo global confirmado y reentrena el clasificador local."""
@@ -587,7 +597,10 @@ class NLPEngine:
         """Sincroniza el modelo del proceso cuando otro worker guardó ejemplos."""
         version = self._version_actual_aprendizajes()
         if version != self._version_aprendizajes:
-            self.reentrenar()
+            if self.pipeline is None:
+                self._cargar_aprendizajes()
+            else:
+                self.reentrenar()
 
     def intencion_aprendida(self, texto: str) -> Optional[str]:
         self.actualizar_si_hay_aprendizajes_nuevos()
@@ -666,6 +679,8 @@ class NLPEngine:
         Busca medicamentos en Pastillero y alias de MemoriaAstrana usando rapidfuzz.
         Retorna la instancia del modelo Pastillero encontrada o None.
         """
+        from rapidfuzz import fuzz, process
+
         from medicine_control.models import Pastillero, MemoriaAstrana
 
         medicamentos = list(Pastillero.objects.all())
@@ -673,7 +688,6 @@ class NLPEngine:
             return None
 
         norm_texto = normalizar_texto(texto)
-        palabras_texto = set(norm_texto.split())
 
         # 1. Chequeo de alias en memoria (ej. 'presion' -> 'Enalapril')
         try:
@@ -724,6 +738,8 @@ class NLPEngine:
 
     def buscar_insumo_fuzzy(self, texto: str) -> Optional[Any]:
         """Busca insumos en la tabla Insumo usando rapidfuzz."""
+        from rapidfuzz import fuzz, process
+
         from medicine_control.models import Insumo
 
         insumos = list(Insumo.objects.all())
