@@ -258,6 +258,52 @@ class AstranaPwaTests(TestCase):
 			personalizer_client.models.generate_content.call_args.kwargs['contents'],
 		)
 
+	def test_astrana_learns_global_style_preferences_from_clear_feedback(self):
+		from Astrana import main as astrana
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': 'Astrana, respondé más breve y sin emojis.'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('más breve', response.json()['reply'])
+		self.assertIn('no usar emojis', response.json()['reply'])
+		preferencia = MemoriaAstrana.objects.get(
+			chat_id='principal',
+			categoria='preferencia',
+			clave='estilo_respuesta',
+			activa=True,
+			confirmada=True,
+		)
+		self.assertEqual(
+			preferencia.valor,
+			'longitud=breve;emojis=no',
+		)
+		self.assertEqual(
+			astrana.obtener_preferencia_estilo(),
+			{'longitud': 'breve', 'emojis': 'no'},
+		)
+
+		astrana.actualizar_preferencia_estilo('Prefiero un tono más formal.')
+		self.assertEqual(
+			astrana.obtener_preferencia_estilo(),
+			{'longitud': 'breve', 'emojis': 'no', 'tono': 'formal'},
+		)
+		recuerdos = astrana.procesar_comando_memoria('otro-chat', '¿Qué recordás?')
+		self.assertIn('estilo_respuesta', recuerdos)
+		self.assertIn('tono=formal', recuerdos)
+
+		self.assertEqual(
+			astrana.actualizar_preferencia_estilo(
+				'Olvidá mis preferencias de respuesta.'
+			),
+			'Listo, olvidé tus preferencias de estilo.',
+		)
+		preferencia.refresh_from_db()
+		self.assertFalse(preferencia.activa)
+
 	def test_astrana_personalizer_uses_context_and_preserves_function_facts(self):
 		from Astrana.response_personalizer import personalizar_respuesta
 
@@ -274,6 +320,7 @@ class AstranaPwaTests(TestCase):
 				{'role': 'user', 'content': 'Quiero revisar las sondas.'},
 				{'role': 'assistant', 'content': 'Dale, ¿qué querés saber?'},
 			],
+			preferencias_estilo={'longitud': 'breve', 'emojis': 'no'},
 			client=client,
 		)
 
@@ -282,6 +329,8 @@ class AstranaPwaTests(TestCase):
 		self.assertIn('Quiero revisar las sondas.', prompt)
 		self.assertIn('¿Cuál es el consumo diario de sondas?', prompt)
 		self.assertIn(resultado, prompt)
+		self.assertIn('Priorizá respuestas breves', prompt)
+		self.assertIn('No uses emojis', prompt)
 		self.assertEqual(
 			client.models.generate_content.call_args.kwargs['config'].http_options.timeout,
 			10000,

@@ -126,6 +126,104 @@ def guardar_memoria(chat_id, categoria, clave, valor):
     return memoria
 
 
+def obtener_preferencia_estilo():
+    memoria = MemoriaAstrana.objects.filter(
+        chat_id='principal',
+        categoria='preferencia',
+        clave='estilo_respuesta',
+        activa=True,
+        confirmada=True,
+    ).first()
+    if not memoria:
+        return {}
+    preferencias = {}
+    valores_validos = {
+        'longitud': {'breve', 'detallada'},
+        'emojis': {'no', 'si'},
+        'tono': {'cercano', 'formal'},
+    }
+    for preferencia in memoria.valor.split(';'):
+        clave, separador, valor = preferencia.partition('=')
+        if separador and valor in valores_validos.get(clave, set()):
+            preferencias[clave] = valor
+    return preferencias
+
+
+def actualizar_preferencia_estilo(texto_usuario):
+    texto = re.sub(r'[^\w\s]', ' ', normalizar_texto(texto_usuario))
+    texto = re.sub(r'\s+', ' ', texto).strip()
+
+    if re.search(r'\b(olvida|olvidar|borra)\b', texto) and re.search(
+        r'\b(estilo|preferencias de respuesta|como me gusta que respondas)\b',
+        texto,
+    ):
+        MemoriaAstrana.objects.filter(
+            chat_id='principal',
+            categoria='preferencia',
+            clave='estilo_respuesta',
+            activa=True,
+        ).update(activa=False)
+        return 'Listo, olvidé tus preferencias de estilo.'
+
+    cambios = {}
+    estilo_mencionado = bool(re.search(
+        r'\b(responde|respondas|respuesta|contesta|contestes|contestame|'
+        r'habla|hablame|tono|estilo|me gusta|prefiero|quiero que)\b',
+        texto,
+    ))
+
+    if re.search(r'\b(mas breve|mas corto|mas conciso|menos palabras|'
+                 r'menos detalle|respuestas cortas|respuestas breves|'
+                 r'anda al grano|no te extiendas)\b', texto):
+        cambios['longitud'] = 'breve'
+    elif estilo_mencionado and re.search(
+        r'\b(mas detalle|mas detallada|mas detallado|mas explicacion|'
+        r'mas extensa|mas extenso)\b',
+        texto,
+    ):
+        cambios['longitud'] = 'detallada'
+
+    if re.search(r'\b(sin emojis|no uses emojis|menos emojis)\b', texto):
+        cambios['emojis'] = 'no'
+    elif re.search(r'\b(usa emojis|con emojis|pone emojis)\b', texto):
+        cambios['emojis'] = 'si'
+
+    if re.search(r'\b(menos formal|mas informal|tono informal|hablame informal|'
+                 r'mas cercano|hablame de vos)\b', texto):
+        cambios['tono'] = 'cercano'
+    elif re.search(r'\b(mas formal|tono formal)\b', texto):
+        cambios['tono'] = 'formal'
+
+    if not cambios:
+        return None
+
+    preferencias = obtener_preferencia_estilo()
+    preferencias.update(cambios)
+    valor = ';'.join(
+        f'{clave}={preferencias[clave]}'
+        for clave in ('longitud', 'emojis', 'tono')
+        if clave in preferencias
+    )
+    guardar_memoria(
+        'principal',
+        'preferencia',
+        'estilo_respuesta',
+        valor,
+    )
+    detalles = {
+        'longitud': {
+            'breve': 'responder más breve',
+            'detallada': 'dar más detalle',
+        },
+        'emojis': {'no': 'no usar emojis', 'si': 'usar emojis'},
+        'tono': {'cercano': 'usar un tono más cercano', 'formal': 'usar un tono más formal'},
+    }
+    resumen = ' y '.join(
+        detalles[clave][preferencias[clave]] for clave in cambios
+    )
+    return f'Anotado: voy a {resumen} en mis respuestas.'
+
+
 def interpretar_aclaracion_sondas(texto):
     palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto)))
     if palabras & {'stock', 'disponible', 'cantidad'}:
@@ -183,9 +281,19 @@ def procesar_comando_memoria(chat_id, texto_usuario):
     texto = re.sub(r'[^\w\s]', '', normalizar_texto(texto_usuario)).strip()
 
     if texto in {'que recordas', 'que recordas de mi', 'que recordas sobre mi'}:
-        memorias = MemoriaAstrana.objects.filter(
+        memorias = list(MemoriaAstrana.objects.filter(
             chat_id=str(chat_id), activa=True, confirmada=True
-        ).order_by('-fecha_actualizacion')[:20]
+        ).order_by('-fecha_actualizacion')[:20])
+        if str(chat_id) != 'principal':
+            preferencia_estilo = MemoriaAstrana.objects.filter(
+                chat_id='principal',
+                categoria='preferencia',
+                clave='estilo_respuesta',
+                activa=True,
+                confirmada=True,
+            ).first()
+            if preferencia_estilo:
+                memorias.append(preferencia_estilo)
         aprendizajes = AprendizajeAstrana.objects.filter(
             chat_id='global', confirmado=True
         ).order_by('-fecha')[:20]

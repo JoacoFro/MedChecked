@@ -1019,6 +1019,7 @@ def astrana_chat_api(request):
                     str(respuesta),
                     str(intencion_para_ultima),
                     contexto=historial[-6:],
+                    preferencias_estilo=astrana.obtener_preferencia_estilo(),
                     client=astrana.gemini_client,
                 )
 
@@ -1091,6 +1092,13 @@ def astrana_chat_api(request):
                     'No pude identificar esa intención. Elegí un número o escribí una opción:\n'
                     f'{_mensaje_catalogo_intenciones_aprendizaje()}'
                 )
+
+        preferencia_estilo_actualizada = astrana.actualizar_preferencia_estilo(
+            texto_usuario
+        )
+        if preferencia_estilo_actualizada:
+            guardar_ultima_consulta = False
+            return respuesta_con_historial(preferencia_estilo_actualizada)
 
         coincidencia_ensenanza = re.match(
             r'^\s*(?:astrana[, ]*)?(?:aprende|aprendé|enseñame|enséñame)\s+que\s+cuando\s+digo\s+["“]?(.+?)["”]?\s+(?:quiero|significa|es)\s+(.+?)\s*$',

@@ -8,6 +8,20 @@ from .personality import ASTRANA_PERSONALIDAD, INTENCIONES_PERSONALIZABLES
 logger = logging.getLogger(__name__)
 
 _DATOS_NUMERICOS = re.compile(r'(?<!\w)\d+(?:[.,]\d+)?(?:/\d+(?:/\d+)?)?(?!\w)')
+_INSTRUCCIONES_ESTILO = {
+    'longitud': {
+        'breve': 'Priorizá respuestas breves y directas.',
+        'detallada': 'Incluí más explicación cuando el resultado lo permita.',
+    },
+    'emojis': {
+        'no': 'No uses emojis.',
+        'si': 'Podés usar emojis con moderación.',
+    },
+    'tono': {
+        'cercano': 'Usá un tono cercano e informal.',
+        'formal': 'Usá un tono más formal.',
+    },
+}
 
 
 def _datos_numericos(texto: str) -> Counter[str]:
@@ -22,6 +36,7 @@ def personalizar_respuesta(
     resultado: str,
     intencion: str,
     contexto: Sequence[Mapping[str, str]] = (),
+    preferencias_estilo: Mapping[str, str] | None = None,
     client: Any = None,
 ) -> str:
     respuesta = str(resultado).strip()
@@ -52,8 +67,16 @@ def personalizar_respuesta(
         if mensaje.get('role') in {'user', 'assistant'}
         and mensaje.get('content')
     ]
+    instrucciones_estilo = [
+        _INSTRUCCIONES_ESTILO[clave][valor]
+        for clave, valor in (preferencias_estilo or {}).items()
+        if clave in _INSTRUCCIONES_ESTILO
+        and valor in _INSTRUCCIONES_ESTILO[clave]
+    ]
     prompt = (
         f'Intención ya reconocida: {intencion}\n'
+        'Preferencias de estilo del usuario (solo guían la redacción):\n'
+        f'{instrucciones_estilo or ["Sin preferencias guardadas."]}\n\n'
         f'Contexto reciente de esta conversación (puede estar vacío):\n'
         f'{contexto_reciente}\n\n'
         f'Consulta actual:\n{consulta}\n\n'
