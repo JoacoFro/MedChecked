@@ -1009,7 +1009,19 @@ def astrana_chat_api(request):
         guardar_ultima_consulta = True
         intencion_para_ultima = None
 
-        def respuesta_con_historial(respuesta, status=200):
+        def respuesta_con_historial(respuesta, status=200, personalizar=False):
+            if personalizar:
+                from Astrana.response_personalizer import personalizar_respuesta
+
+                historial = request.session.get('astrana_chat_history', [])
+                respuesta = personalizar_respuesta(
+                    texto_usuario,
+                    str(respuesta),
+                    str(intencion_para_ultima),
+                    contexto=historial[-6:],
+                    client=astrana.gemini_client,
+                )
+
             historial = request.session.get('astrana_chat_history', [])
             historial.extend([
                 {'role': 'user', 'content': texto_usuario},
@@ -1153,7 +1165,7 @@ def astrana_chat_api(request):
                 respuesta = astrana.consultar_ultimo_pedido_recibido()
             else:
                 respuesta = astrana.consultar_ultimo_pedido_solicitado()
-            return respuesta_con_historial(respuesta)
+            return respuesta_con_historial(respuesta, personalizar=True)
 
         es_consulta_pastillero = (intencion_aprendida or intencion_regla) in {
             'ultimas_tomas_pastillero',
@@ -1470,7 +1482,7 @@ def astrana_chat_api(request):
         else:
             respuesta = 'No pude resolver esa consulta con las funciones locales de Astrana. Probá preguntarme por stock, trámites, envíos o pastillero.'
 
-        return respuesta_con_historial(respuesta)
+        return respuesta_con_historial(respuesta, personalizar=True)
     except Exception:
         import logging
         logging.getLogger(__name__).exception('Error procesando mensaje desde la PWA de Astrana.')

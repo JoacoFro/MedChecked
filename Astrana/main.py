@@ -845,7 +845,7 @@ def intencion_demora_pedidos(palabras):
     if palabras & {
         'llego', 'llega', 'llegada', 'recibido', 'recibieron',
         'recibi', 'recepcion',
-    } and palabras & {'ultimo', 'ultimos', 'reciente', 'pedido', 'envio'}:
+    } and palabras & {'ultimo', 'ultimos', 'reciente'}:
         return 'ultimo_pedido_recibido'
     return None
 

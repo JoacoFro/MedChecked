@@ -206,6 +206,7 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(messages[0]['content'], 'hola astrana')
 
 	def test_chat_reports_the_existing_daily_probe_consumption_metric(self):
+		from Astrana import main as astrana
 		from Astrana.nlp_engine import nlp_engine
 
 		insumo = Insumo.objects.create(
@@ -226,8 +227,13 @@ class AstranaPwaTests(TestCase):
 		Salida.objects.filter(pk=antigua.pk).update(
 			fecha=timezone.now() - timedelta(days=15),
 		)
+		personalizer_client = Mock()
+		personalizer_client.models.generate_content.return_value.text = (
+			'El consumo fue de 9,0 sondas / día durante los últimos 14 días.'
+		)
 
 		with (
+			patch.object(astrana, 'gemini_client', personalizer_client),
 			patch.object(nlp_engine, 'pipeline', None),
 			patch.object(nlp_engine, '_version_aprendizajes', None),
 			patch.object(nlp_engine, '_frases_aprendidas', {}),
@@ -241,10 +247,95 @@ class AstranaPwaTests(TestCase):
 			entrenar.assert_not_called()
 
 		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response.json()['reply'],
+			'El consumo fue de 9,0 sondas / día durante los últimos 14 días.',
+		)
 		self.assertIn('9,0 sondas / día', response.json()['reply'].lower())
 		self.assertIn('últimos 14 días', response.json()['reply'])
+		self.assertIn(
+			'Resultado técnico de la función',
+			personalizer_client.models.generate_content.call_args.kwargs['contents'],
+		)
+
+	def test_astrana_personalizer_uses_context_and_preserves_function_facts(self):
+		from Astrana.response_personalizer import personalizar_respuesta
+
+		resultado = '📈 Consumo IA: 8,6 Sondas / día.'
+		client = Mock()
+		client.models.generate_content.return_value.text = (
+			'Mirá, el consumo es de 8,6 sondas por día.'
+		)
+		respuesta = personalizar_respuesta(
+			'¿Cuál es el consumo diario de sondas?',
+			resultado,
+			'consultar_consumo',
+			contexto=[
+				{'role': 'user', 'content': 'Quiero revisar las sondas.'},
+				{'role': 'assistant', 'content': 'Dale, ¿qué querés saber?'},
+			],
+			client=client,
+		)
+
+		self.assertEqual(respuesta, 'Mirá, el consumo es de 8,6 sondas por día.')
+		prompt = client.models.generate_content.call_args.kwargs['contents']
+		self.assertIn('Quiero revisar las sondas.', prompt)
+		self.assertIn('¿Cuál es el consumo diario de sondas?', prompt)
+		self.assertIn(resultado, prompt)
+		self.assertEqual(
+			client.models.generate_content.call_args.kwargs['config'].http_options.timeout,
+			10000,
+		)
+
+		client.models.generate_content.return_value.text = (
+			'Mirá, el consumo es de 9,0 sondas por día.'
+		)
+		self.assertEqual(
+			personalizar_respuesta(
+				'¿Cuál es el consumo diario de sondas?',
+				resultado,
+				'consultar_consumo',
+				client=client,
+			),
+			resultado,
+		)
+
+		self.assertEqual(
+			personalizar_respuesta(
+				'Mostrame solo el consumo diario de sondas',
+				resultado,
+				'consultar_consumo',
+				client=client,
+			),
+			resultado,
+		)
+		self.assertEqual(client.models.generate_content.call_count, 2)
+		self.assertEqual(
+			personalizar_respuesta(
+				'¿Cuál es el consumo diario de sondas?',
+				'❌ Error al consultar el consumo de Sondas.',
+				'consultar_consumo',
+				client=client,
+			),
+			'❌ Error al consultar el consumo de Sondas.',
+		)
+		self.assertEqual(client.models.generate_content.call_count, 2)
+
+		client.models.generate_content.side_effect = RuntimeError('Gemini no disponible')
+		with self.assertLogs('Astrana.response_personalizer', level='ERROR'):
+			self.assertEqual(
+				personalizar_respuesta(
+					'¿Cuál es el consumo diario de sondas?',
+					resultado,
+					'consultar_consumo',
+					client=client,
+				),
+				resultado,
+			)
 
 	def test_chat_reports_latest_order_date_even_if_order_flow_is_waiting(self):
+		from Astrana import main as astrana
+
 		fecha_base = timezone.localdate() - timedelta(days=10)
 		for indice in range(6):
 			envio = Envio.objects.create(
@@ -270,11 +361,12 @@ class AstranaPwaTests(TestCase):
 			'¿Cuándo hice el último pedido?',
 			'¿Cuál fue mi pedido más reciente?',
 		):
-			response = self.client.post(
-				reverse('astrana_chat_api'),
-				{'message': pregunta},
-				secure=True,
-			)
+			with patch.object(astrana, 'gemini_client', None):
+				response = self.client.post(
+					reverse('astrana_chat_api'),
+					{'message': pregunta},
+					secure=True,
+				)
 
 			self.assertEqual(response.status_code, 200)
 			self.assertIn(fecha_ultimo_pedido.strftime('%d/%m/%Y'), response.json()['reply'])
@@ -282,6 +374,8 @@ class AstranaPwaTests(TestCase):
 			self.assertEqual(response.json()['reply'].count('Estado:'), 1)
 
 	def test_chat_reports_average_delay_and_latest_received_order_dates(self):
+		from Astrana import main as astrana
+
 		hoy = timezone.localdate()
 		pedido_anterior = Envio.objects.create(
 			tipo='os',
@@ -325,11 +419,12 @@ class AstranaPwaTests(TestCase):
 		)
 		for pregunta, esperado in consultas:
 			with self.subTest(pregunta=pregunta):
-				response = self.client.post(
-					reverse('astrana_chat_api'),
-					{'message': pregunta},
-					secure=True,
-				)
+				with patch.object(astrana, 'gemini_client', None):
+					response = self.client.post(
+						reverse('astrana_chat_api'),
+						{'message': pregunta},
+						secure=True,
+					)
 				self.assertEqual(response.status_code, 200)
 				self.assertIn(esperado.lower(), response.json()['reply'].lower())
 		self.assertIn(
