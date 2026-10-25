@@ -324,7 +324,10 @@ class AstranaPwaTests(TestCase):
 			client=client,
 		)
 
-		self.assertEqual(respuesta, 'Mirá, el consumo es de 8,6 sondas por día.')
+		self.assertEqual(
+			respuesta,
+			'Mirá, el consumo es de 8,6 sondas por día.',
+		)
 		prompt = client.models.generate_content.call_args.kwargs['contents']
 		self.assertIn('Quiero revisar las sondas.', prompt)
 		self.assertIn('¿Cuál es el consumo diario de sondas?', prompt)
@@ -349,7 +352,7 @@ class AstranaPwaTests(TestCase):
 			resultado,
 		)
 		client.models.generate_content.return_value.text = (
-			'El consumo diario es de 8,6 sondas.'
+			'El consumo diario es de 8,6 sondas por día.'
 		)
 		self.assertEqual(
 			personalizar_respuesta(
@@ -358,9 +361,40 @@ class AstranaPwaTests(TestCase):
 				'consultar_consumo',
 				client=client,
 			),
-			'El consumo diario es de 8,6 sondas.',
+			'El consumo diario es de 8,6 sondas por día.',
+		)
+		resultado_con_periodo = (
+			'📈 Consumo IA: 8,6 Sondas / día (promedio de los últimos 14 días).'
+		)
+		self.assertEqual(
+			personalizar_respuesta(
+				'¿Cuál es el consumo diario de sondas?',
+				resultado_con_periodo,
+				'consultar_consumo',
+				client=client,
+			),
+			resultado_con_periodo,
 		)
 
+		for respuesta_incompleta in (
+			'Te cuento: tenés **',
+			'El último pedido que',
+			'El consumo es de 8,6 sondas',
+		):
+			client.models.generate_content.return_value.text = respuesta_incompleta
+			self.assertEqual(
+				personalizar_respuesta(
+					'¿Cuál es el consumo diario de sondas?',
+					resultado,
+					'consultar_consumo',
+					client=client,
+				),
+				resultado,
+			)
+
+		client.models.generate_content.return_value.text = (
+			'El consumo diario es de 8,6 sondas por día durante los últimos 14 días.'
+		)
 		self.assertEqual(
 			personalizar_respuesta(
 				'Mostrame solo el consumo diario de sondas',
@@ -370,7 +404,7 @@ class AstranaPwaTests(TestCase):
 			),
 			resultado,
 		)
-		self.assertEqual(client.models.generate_content.call_count, 3)
+		self.assertEqual(client.models.generate_content.call_count, 7)
 		self.assertEqual(
 			personalizar_respuesta(
 				'¿Cuál es el consumo diario de sondas?',
@@ -380,7 +414,7 @@ class AstranaPwaTests(TestCase):
 			),
 			'❌ Error al consultar el consumo de Sondas.',
 		)
-		self.assertEqual(client.models.generate_content.call_count, 3)
+		self.assertEqual(client.models.generate_content.call_count, 7)
 
 		client.models.generate_content.return_value.text = (
 			'Drafting the Response:** * Data to Present:** *'
@@ -438,6 +472,16 @@ class AstranaPwaTests(TestCase):
 		self.assertIn('Estado Actual del Stock', response.json()['reply'])
 		self.assertIn('120 un.', response.json()['reply'])
 		self.assertNotIn('Te paso el stock', response.json()['reply'])
+
+		with patch.object(astrana, 'gemini_client', None):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': '¿Cuántas sondas tengo?'},
+				secure=True,
+			)
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('Estado Actual del Stock', response.json()['reply'])
+		self.assertIn('120 un.', response.json()['reply'])
 
 	def test_chat_verifies_named_medication_instead_of_listing_all_takes(self):
 		from Astrana import main as astrana

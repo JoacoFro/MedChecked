@@ -10,7 +10,12 @@ logger = logging.getLogger(__name__)
 _DATOS_NUMERICOS = re.compile(r'(?<!\w)\d+(?:[.,]\d+)?(?:/\d+(?:/\d+)?)?(?!\w)')
 _TEXTO_INTERNO_GEMINI = re.compile(
     r'\b(?:drafting the response|data to present|chain of thought|'
-    r'let me think|analysis)\b',
+    r'let me think|analysis|standard argentine assistant tone)\b',
+    re.IGNORECASE,
+)
+_FINAL_INCOMPLETO = re.compile(
+    r'(?:\b(?:que|de|del|con|para|por|y|o|el|la|los|las|un|una|es|son|'
+    r'ten[eé]s|tiene|tienen|registraste|fue|recibido)\s*|\*{1,2}|:)$',
     re.IGNORECASE,
 )
 _INSTRUCCIONES_ESTILO = {
@@ -40,6 +45,19 @@ def _agrega_datos_numericos(respuesta: str, resultado: str) -> bool:
     return bool(
         _datos_numericos(respuesta) - _datos_numericos(resultado)
     )
+
+
+def _omite_datos_numericos(respuesta: str, resultado: str) -> bool:
+    return bool(
+        _datos_numericos(resultado) - _datos_numericos(respuesta)
+    )
+
+
+def _respuesta_parece_incompleta(respuesta: str) -> bool:
+    texto = respuesta.rstrip()
+    if _FINAL_INCOMPLETO.search(texto):
+        return True
+    return not re.search(r'[.!?…][”"\')\]]*$', texto)
 
 
 def personalizar_respuesta(
@@ -109,7 +127,7 @@ def personalizar_respuesta(
             config=types.GenerateContentConfig(
                 system_instruction=ASTRANA_PERSONALIDAD,
                 temperature=0.3,
-                max_output_tokens=220,
+                max_output_tokens=350,
                 http_options=types.HttpOptions(timeout=10000),
             ),
         )
@@ -117,15 +135,38 @@ def personalizar_respuesta(
         if not respuesta_natural:
             logger.warning('Gemini devolvió una respuesta vacía al personalizar Astrana.')
             return respuesta
+        candidates = getattr(response, 'candidates', None)
+        candidate = (
+            candidates[0]
+            if isinstance(candidates, (list, tuple)) and candidates
+            else None
+        )
+        finish_reason = getattr(candidate, 'finish_reason', None)
+        if str(finish_reason).upper().endswith('MAX_TOKENS'):
+            logger.warning(
+                'Se descartó una respuesta personalizada de Astrana truncada por límite de tokens.'
+            )
+            return respuesta
         if _TEXTO_INTERNO_GEMINI.search(respuesta_natural):
             logger.warning(
                 'Se descartó una respuesta de Gemini que contenía texto interno de generación.'
+            )
+            return respuesta
+        if _respuesta_parece_incompleta(respuesta_natural):
+            logger.warning(
+                'Se descartó una respuesta personalizada de Astrana que parecía incompleta.'
             )
             return respuesta
         if _agrega_datos_numericos(respuesta_natural, respuesta):
             logger.warning(
                 'Se descartó una respuesta personalizada de Astrana porque agregó '
                 'cantidades o fechas que no estaban en el resultado técnico.'
+            )
+            return respuesta
+        if _omite_datos_numericos(respuesta_natural, respuesta):
+            logger.warning(
+                'Se descartó una respuesta personalizada de Astrana porque omitió '
+                'cantidades o fechas del resultado técnico.'
             )
             return respuesta
         if respuesta_natural == respuesta:

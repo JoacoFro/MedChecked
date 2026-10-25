@@ -967,6 +967,13 @@ def detectar_consulta_datos(texto_usuario):
     if intencion_demora:
         return intencion_demora
 
+    medicamento_en_pastillero = medicamento_mencionado(texto_usuario)
+    menciona_toma = bool(palabras & {
+        'tome', 'tomé', 'tomo', 'tomaste', 'tomado', 'tomar',
+    })
+    if medicamento_en_pastillero and menciona_toma and '?' in texto_usuario:
+        return 'consultar_si_tomo'
+
     habla_de_sondas = 'sonda' in palabras or 'sondas' in palabras
     habla_de_movimientos = bool(palabras & {
         'movimiento', 'movimientos', 'ingreso', 'ingresos',
@@ -986,7 +993,21 @@ def detectar_consulta_datos(texto_usuario):
     }):
         return 'aclarar_sondas'
 
-    medicamento_en_pastillero = medicamento_mencionado(texto_usuario)
+    consulta_stock = (
+        'stock' in palabras
+        and bool(palabras & {
+            'actual', 'actualmente', 'hay', 'tengo', 'queda', 'quedan',
+            'decis', 'decime', 'decir', 'mostrar', 'mostrame', 'ver',
+            'consultar', 'consulta',
+        })
+    )
+    consulta_cantidad_sondas = habla_de_sondas and bool(palabras & {
+        'cuantas', 'cuantos', 'cantidad', 'tengo', 'queda', 'quedan',
+        'disponible', 'disponibles',
+    })
+    if consulta_stock or consulta_cantidad_sondas:
+        return 'consultar_stock'
+
     habla_de_pastillero = bool(palabras & {
         'pastillero', 'pastillas', 'medicamento', 'medicamentos',
         'medicacion', 'medicación', 'tomas', 'toma', 'tableta', 'comprimido',

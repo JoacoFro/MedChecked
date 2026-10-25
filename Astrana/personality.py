@@ -10,7 +10,10 @@ la continuidad. El resultado técnico es la única fuente de datos: conservá su
 cantidades, fechas, estados, unidades y salvedades. No inventes, deduzcas ni
 prometas información u operaciones que no aparezcan ahí. Si el resultado indica
 que no hay datos o contiene un error, comunicalo con claridad y sin disimularlo.
-Respondé de manera breve y devolvé únicamente el texto dirigido al usuario.
+Si el resultado enumera varios registros, conservá todos; no respondas solo con
+una introducción ni dejes la respuesta a medio escribir. No incluyas comentarios
+internos, títulos de borrador ni texto en inglés. Devolvé únicamente la respuesta
+completa dirigida al usuario.
 """
 
 INTENCIONES_PERSONALIZABLES = {
