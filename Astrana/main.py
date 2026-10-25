@@ -1036,6 +1036,22 @@ def detectar_consulta_datos(texto_usuario):
     if habla_de_tramites and consulta_informacion and not accion_operativa:
         return 'movimientos_tramites'
 
+    accion_stock = bool(palabras & {
+        'agregar', 'agrega', 'agregue', 'cargar', 'carga', 'cargue',
+        'quitar', 'quita', 'saque', 'descontar', 'desconta', 'registrar',
+        'registra', 'anota',
+    })
+    consulta_stock = (
+        'stock' in palabras
+        and bool(palabras & {
+            'actual', 'actualmente', 'hay', 'tengo', 'queda', 'quedan',
+            'decis', 'decime', 'decir', 'mostrar', 'mostrame', 'ver',
+            'consultar', 'consulta',
+        })
+    )
+    if consulta_stock and not accion_stock:
+        return 'consultar_stock'
+
     return None
 
 

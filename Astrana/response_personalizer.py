@@ -8,6 +8,11 @@ from .personality import ASTRANA_PERSONALIDAD, INTENCIONES_PERSONALIZABLES
 logger = logging.getLogger(__name__)
 
 _DATOS_NUMERICOS = re.compile(r'(?<!\w)\d+(?:[.,]\d+)?(?:/\d+(?:/\d+)?)?(?!\w)')
+_TEXTO_INTERNO_GEMINI = re.compile(
+    r'\b(?:drafting the response|data to present|chain of thought|'
+    r'let me think|analysis)\b',
+    re.IGNORECASE,
+)
 _INSTRUCCIONES_ESTILO = {
     'longitud': {
         'breve': 'Priorizá respuestas breves y directas.',
@@ -111,6 +116,11 @@ def personalizar_respuesta(
         respuesta_natural = (response.text or '').strip()
         if not respuesta_natural:
             logger.warning('Gemini devolvió una respuesta vacía al personalizar Astrana.')
+            return respuesta
+        if _TEXTO_INTERNO_GEMINI.search(respuesta_natural):
+            logger.warning(
+                'Se descartó una respuesta de Gemini que contenía texto interno de generación.'
+            )
             return respuesta
         if _agrega_datos_numericos(respuesta_natural, respuesta):
             logger.warning(

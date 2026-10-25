@@ -1262,12 +1262,9 @@ def astrana_chat_api(request):
         if comando_memoria:
             return respuesta_con_historial(comando_memoria)
 
-        intencion = intencion_aprendida or astrana.detectar_consulta_con_memoria(
-            chat_id,
-            texto_usuario,
-        )
+        intencion = intencion_regla or intencion_aprendida
         if not intencion:
-            intencion = intencion_regla
+            intencion = astrana.detectar_consulta_con_memoria(chat_id, texto_usuario)
 
         entidades = {}
         if intencion is None:
@@ -1475,18 +1472,6 @@ def astrana_chat_api(request):
                     respuesta = f"⏰ Entendido Joaco. Hoy te voy a recordar tomar tus pastillas a las {h:02d}:{m:02d} hs. Mañana vuelvo al horario habitual."
             else:
                 respuesta = "❓ ¿A qué hora querés que te haga acordar? (Ejemplo: 'A las 14:30' o 'A las 9 hs')"
-        elif astrana.gemini_client is not None:
-            clave_historial = f'web-{request.session.session_key}'
-            if clave_historial not in astrana.historiales:
-                astrana.historiales[clave_historial] = astrana.gemini_client.chats.create(
-                    model='gemini-3.6-flash',
-                    config=astrana.gemini_config,
-                )
-            respuesta_gemini = astrana.historiales[clave_historial].send_message(
-                texto_usuario,
-                config=astrana.gemini_config,
-            )
-            respuesta = respuesta_gemini.text or 'No pude generar una respuesta para ese mensaje.'
         else:
             respuesta = 'No pude resolver esa consulta con las funciones locales de Astrana. Probá preguntarme por stock, trámites, envíos o pastillero.'
 

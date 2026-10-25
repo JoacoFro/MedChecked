@@ -382,6 +382,19 @@ class AstranaPwaTests(TestCase):
 		)
 		self.assertEqual(client.models.generate_content.call_count, 3)
 
+		client.models.generate_content.return_value.text = (
+			'Drafting the Response:** * Data to Present:** *'
+		)
+		self.assertEqual(
+			personalizar_respuesta(
+				'¿Cuál es el consumo diario de sondas?',
+				resultado,
+				'consultar_consumo',
+				client=client,
+			),
+			resultado,
+		)
+
 		client.models.generate_content.side_effect = RuntimeError('Gemini no disponible')
 		with self.assertLogs('Astrana.response_personalizer', level='ERROR'):
 			self.assertEqual(
@@ -405,6 +418,70 @@ class AstranaPwaTests(TestCase):
 			astrana.detectar_consulta_datos('¿Cuál fue el último pedido?'),
 			'ultimo_pedido',
 		)
+
+	def test_chat_routes_stock_question_to_local_stock_consultation(self):
+		from Astrana import main as astrana
+
+		Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=4,
+			unidades_por_caja=30,
+		)
+		with patch.object(astrana, 'gemini_client', None):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': 'Che Astrana, ¿me decís el stock actual?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('Estado Actual del Stock', response.json()['reply'])
+		self.assertIn('120 un.', response.json()['reply'])
+		self.assertNotIn('Te paso el stock', response.json()['reply'])
+
+	def test_chat_verifies_named_medication_instead_of_listing_all_takes(self):
+		from Astrana import main as astrana
+
+		medicamento = Pastillero.objects.create(
+			nombre='Pantoprazol',
+			cantidad_total=10,
+		)
+		TomaPastillero.objects.create(medicamento=medicamento, cantidad=1)
+		with patch.object(astrana, 'gemini_client', None):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': 'Tome pantoprazol?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('Sí, registraste una toma de Pantoprazol hoy.', response.json()['reply'])
+		self.assertNotIn('Tomas de los medicamentos', response.json()['reply'])
+		self.assertEqual(TomaPastillero.objects.filter(medicamento=medicamento).count(), 1)
+
+	def test_unknown_chat_message_does_not_fall_through_to_gemini_chat(self):
+		from Astrana import main as astrana
+		from Astrana.nlp_engine import NLPResult, nlp_engine
+
+		gemini_client = Mock()
+		with (
+			patch.object(astrana, 'gemini_client', gemini_client),
+			patch.object(astrana, 'detectar_consulta_datos', return_value=None),
+			patch.object(astrana, 'detectar_consulta_con_memoria', return_value=None),
+			patch.object(nlp_engine, 'intencion_aprendida', return_value=None),
+			patch.object(nlp_engine, 'interpretar', return_value=NLPResult('otro', 0.9)),
+			patch.object(nlp_engine, 'clasificar_intencion_semantica', return_value=None),
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': 'Contame un chiste.'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('No pude resolver esa consulta', response.json()['reply'])
+		gemini_client.chats.create.assert_not_called()
+		gemini_client.models.generate_content.assert_not_called()
 
 	def test_chat_reports_latest_order_date_even_if_order_flow_is_waiting(self):
 		from Astrana import main as astrana
