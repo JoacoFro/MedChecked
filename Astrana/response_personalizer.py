@@ -31,6 +31,12 @@ def _datos_numericos(texto: str) -> Counter[str]:
     )
 
 
+def _agrega_datos_numericos(respuesta: str, resultado: str) -> bool:
+    return bool(
+        _datos_numericos(respuesta) - _datos_numericos(resultado)
+    )
+
+
 def personalizar_respuesta(
     consulta: str,
     resultado: str,
@@ -40,11 +46,17 @@ def personalizar_respuesta(
     client: Any = None,
 ) -> str:
     respuesta = str(resultado).strip()
-    if (
-        not respuesta
-        or intencion not in INTENCIONES_PERSONALIZABLES
-        or client is None
-    ):
+    if not respuesta:
+        return respuesta
+    if intencion not in INTENCIONES_PERSONALIZABLES:
+        logger.info(
+            'Se omitió la personalización de Astrana para una intención no permitida.'
+        )
+        return respuesta
+    if client is None:
+        logger.warning(
+            'Se omitió la personalización de Astrana porque Gemini no está disponible.'
+        )
         return respuesta
 
     mensaje_normalizado = re.sub(r'^[^\w]+', '', respuesta.casefold())
@@ -100,12 +112,16 @@ def personalizar_respuesta(
         if not respuesta_natural:
             logger.warning('Gemini devolvió una respuesta vacía al personalizar Astrana.')
             return respuesta
-        if _datos_numericos(respuesta_natural) != _datos_numericos(respuesta):
+        if _agrega_datos_numericos(respuesta_natural, respuesta):
             logger.warning(
-                'Se descartó una respuesta personalizada de Astrana porque alteró '
-                'las cantidades o fechas del resultado técnico.'
+                'Se descartó una respuesta personalizada de Astrana porque agregó '
+                'cantidades o fechas que no estaban en el resultado técnico.'
             )
             return respuesta
+        if respuesta_natural == respuesta:
+            logger.info(
+                'Gemini devolvió el resultado técnico de Astrana sin cambios.'
+            )
         return respuesta_natural
     except Exception:
         logger.exception('No se pudo personalizar la respuesta de Astrana con Gemini.')

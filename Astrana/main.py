@@ -1004,6 +1004,14 @@ def detectar_consulta_datos(texto_usuario):
     habla_de_tramites = bool(palabras & {
         'pedido', 'pedidos', 'tramite', 'tramites', 'envio', 'envios',
     })
+    consulta_ultimos_pedidos = (
+        habla_de_tramites
+        and bool(palabras & {'pedidos', 'envios', 'tramites'})
+        and bool(palabras & {'ultimos', 'recientes'})
+    )
+    if consulta_ultimos_pedidos:
+        return 'movimientos_tramites'
+
     consulta_ultimo_pedido = habla_de_tramites and (
         bool(palabras & {'ultimo', 'ultimos', 'reciente', 'recientes'})
         or (

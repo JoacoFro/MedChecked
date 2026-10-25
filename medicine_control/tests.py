@@ -348,6 +348,18 @@ class AstranaPwaTests(TestCase):
 			),
 			resultado,
 		)
+		client.models.generate_content.return_value.text = (
+			'El consumo diario es de 8,6 sondas.'
+		)
+		self.assertEqual(
+			personalizar_respuesta(
+				'¿Cuál es el consumo diario de sondas?',
+				resultado,
+				'consultar_consumo',
+				client=client,
+			),
+			'El consumo diario es de 8,6 sondas.',
+		)
 
 		self.assertEqual(
 			personalizar_respuesta(
@@ -358,7 +370,7 @@ class AstranaPwaTests(TestCase):
 			),
 			resultado,
 		)
-		self.assertEqual(client.models.generate_content.call_count, 2)
+		self.assertEqual(client.models.generate_content.call_count, 3)
 		self.assertEqual(
 			personalizar_respuesta(
 				'¿Cuál es el consumo diario de sondas?',
@@ -368,7 +380,7 @@ class AstranaPwaTests(TestCase):
 			),
 			'❌ Error al consultar el consumo de Sondas.',
 		)
-		self.assertEqual(client.models.generate_content.call_count, 2)
+		self.assertEqual(client.models.generate_content.call_count, 3)
 
 		client.models.generate_content.side_effect = RuntimeError('Gemini no disponible')
 		with self.assertLogs('Astrana.response_personalizer', level='ERROR'):
@@ -381,6 +393,18 @@ class AstranaPwaTests(TestCase):
 				),
 				resultado,
 			)
+
+	def test_chat_distinguishes_latest_orders_plural_from_latest_order_singular(self):
+		from Astrana import main as astrana
+
+		self.assertEqual(
+			astrana.detectar_consulta_datos('Che, ¿cuáles son los últimos pedidos?'),
+			'movimientos_tramites',
+		)
+		self.assertEqual(
+			astrana.detectar_consulta_datos('¿Cuál fue el último pedido?'),
+			'ultimo_pedido',
+		)
 
 	def test_chat_reports_latest_order_date_even_if_order_flow_is_waiting(self):
 		from Astrana import main as astrana
