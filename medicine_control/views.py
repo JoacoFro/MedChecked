@@ -14,7 +14,7 @@ import re
 import requests
 from django.http import JsonResponse
 from .models import Insumo, Envio, MemoriaAstrana, Pastillero, TomaPastillero
-from .metrics import consumo_diario_estimado
+from .metrics import consumo_diario_estimado, demora_promedio_pedidos
 from django.contrib import messages
 from django.shortcuts import render, redirect
 import os
@@ -205,12 +205,11 @@ def lista_envios(request):
         else:
             envios = envios.filter(Q(estado__icontains=query) | Q(notas__icontains=query))
 
-    recibidos = Envio.objects.filter(estado='recibido')
-    promedio_demora = sum(e.demora_real for e in recibidos) / recibidos.count() if recibidos.exists() else 0
+    promedio_demora = demora_promedio_pedidos()
 
     return render(request, 'medicine_control/envios.html', {
         'envios': envios,
-        'promedio_demora': round(promedio_demora, 1),
+        'promedio_demora': round(promedio_demora or 0, 1),
         'query': query 
     })
 
@@ -1142,8 +1141,19 @@ def astrana_chat_api(request):
         if intencion_regla == 'aclarar_sondas':
             intencion_regla = None
         intencion_para_ultima = intencion_aprendida or intencion_regla
-        if intencion_para_ultima == 'ultimo_pedido':
-            return respuesta_con_historial(astrana.consultar_ultimo_pedido_solicitado())
+        if intencion_para_ultima in {
+            'ultimo_pedido',
+            'demora_promedio_pedidos',
+            'demora_ultimo_pedido',
+            'ultimo_pedido_recibido',
+        }:
+            if intencion_para_ultima == 'demora_promedio_pedidos':
+                respuesta = astrana.consultar_demora_promedio_pedidos()
+            elif intencion_para_ultima in {'demora_ultimo_pedido', 'ultimo_pedido_recibido'}:
+                respuesta = astrana.consultar_ultimo_pedido_recibido()
+            else:
+                respuesta = astrana.consultar_ultimo_pedido_solicitado()
+            return respuesta_con_historial(respuesta)
 
         es_consulta_pastillero = (intencion_aprendida or intencion_regla) in {
             'ultimas_tomas_pastillero',
@@ -1343,6 +1353,10 @@ def astrana_chat_api(request):
             return respuesta_con_historial('Hola Joaco, soy Astrana. Puedo ayudarte con stock, sondas, trámites, envíos y pastillero. ¿Qué necesitás?')
         if intencion == 'ultimo_pedido':
             respuesta = astrana.consultar_ultimo_pedido_solicitado()
+        elif intencion == 'demora_promedio_pedidos':
+            respuesta = astrana.consultar_demora_promedio_pedidos()
+        elif intencion in {'demora_ultimo_pedido', 'ultimo_pedido_recibido'}:
+            respuesta = astrana.consultar_ultimo_pedido_recibido()
         elif intencion == 'consultar_stock':
             respuesta = astrana.consultar_estado_stock()
         elif intencion == 'consultar_consumo':

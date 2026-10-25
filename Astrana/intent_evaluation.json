@@ -47,6 +47,24 @@
   {"text": "¿Cuál fue el pedido inmediatamente anterior?", "intent": "ultimo_pedido"},
   {"text": "Mostrame un solo envío: el último que inicié", "intent": "ultimo_pedido"},
 
+  {"text": "¿Cuál es la demora promedio de los pedidos recibidos?", "intent": "demora_promedio_pedidos"},
+  {"text": "¿Cuánto tarda normalmente un pedido en llegar?", "intent": "demora_promedio_pedidos"},
+  {"text": "Decime el promedio de días que demoran los envíos", "intent": "demora_promedio_pedidos"},
+  {"text": "¿Cuánto demoran en promedio los trámites de la obra social?", "intent": "demora_promedio_pedidos"},
+  {"text": "¿Cuál es el tiempo promedio de espera de los pedidos?", "intent": "demora_promedio_pedidos"},
+
+  {"text": "¿Cuántos días tardó el último pedido?", "intent": "demora_ultimo_pedido"},
+  {"text": "¿Cuánto demoró el envío más reciente?", "intent": "demora_ultimo_pedido"},
+  {"text": "Decime la demora del último pedido recibido", "intent": "demora_ultimo_pedido"},
+  {"text": "¿Cuánto tiempo pasó hasta que llegó el pedido más reciente?", "intent": "demora_ultimo_pedido"},
+  {"text": "¿Cuántos días estuvo en camino el último envío?", "intent": "demora_ultimo_pedido"},
+
+  {"text": "¿En qué fecha llegó el último pedido?", "intent": "ultimo_pedido_recibido"},
+  {"text": "¿Cuándo recibí el envío más reciente?", "intent": "ultimo_pedido_recibido"},
+  {"text": "Decime la fecha de recepción del último pedido", "intent": "ultimo_pedido_recibido"},
+  {"text": "¿Qué día llegó el pedido más nuevo?", "intent": "ultimo_pedido_recibido"},
+  {"text": "¿Cuándo recibieron el último envío de la obra social?", "intent": "ultimo_pedido_recibido"},
+
   {"text": "Quiero empezar una solicitud para la obra social", "intent": "iniciar_tramite"},
   {"text": "Abrí un pedido de sondas de reserva", "intent": "iniciar_tramite"},
   {"text": "Necesito generar un nuevo trámite de provisión", "intent": "iniciar_tramite"},

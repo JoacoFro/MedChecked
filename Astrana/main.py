@@ -31,7 +31,11 @@ from medicine_control.models import (
     MemoriaAstrana,
     AprendizajeAstrana,
 )
-from medicine_control.metrics import consumo_diario_estimado
+from medicine_control.metrics import (
+    consumo_diario_estimado,
+    demora_promedio_pedidos,
+    ultimo_pedido_recibido,
+)
 from medicine_control.pastillero_services import (
     medicamentos_pendientes_ids,
     registrar_toma_recordatorio,
@@ -156,6 +160,10 @@ def detectar_consulta_con_memoria(chat_id, texto_usuario):
 
 def intencion_desde_regla(texto):
     palabras = set(re.findall(r'\b\w+\b', normalizar_texto(texto)))
+    intencion_demora = intencion_demora_pedidos(palabras)
+    if intencion_demora:
+        return intencion_demora
+
     if 'sonda' in palabras or 'sondas' in palabras:
         if palabras & {'movimiento', 'movimientos', 'ingreso', 'ingresos', 'egreso', 'egresos', 'salida', 'salidas'}:
             return 'movimientos_sondas'
@@ -165,7 +173,7 @@ def intencion_desde_regla(texto):
             return 'autonomia_sondas'
         if palabras & {'stock', 'cantidad', 'disponible'}:
             return 'stock_sondas'
-    if palabras & {'tramite', 'tramites', 'envio', 'envios'}:
+    if palabras & {'tramite', 'tramites', 'envio', 'envios', 'pedido', 'pedidos'}:
         return 'movimientos_tramites'
     return None
 
@@ -721,6 +729,35 @@ def consultar_ultimo_pedido_solicitado():
         return f'Error al consultar el último pedido: {error}'
 
 
+def consultar_demora_promedio_pedidos():
+    try:
+        connection.close_if_unusable_or_obsolete()
+        demora = demora_promedio_pedidos()
+        if demora is None:
+            return 'Todavía no hay pedidos recibidos para calcular la demora promedio.'
+        demora_formateada = number_format(demora, 1)
+        return f'📊 La demora promedio de los pedidos recibidos es de {demora_formateada} días.'
+    except Exception as error:
+        return f'Error al consultar la demora promedio de los pedidos: {error}'
+
+
+def consultar_ultimo_pedido_recibido():
+    try:
+        connection.close_if_unusable_or_obsolete()
+        pedido = ultimo_pedido_recibido()
+        if pedido is None:
+            return 'No hay pedidos recibidos con fecha de recepción registrada.'
+        demora = pedido.demora_real
+        unidad = 'día' if demora == 1 else 'días'
+        return (
+            f'📦 El último pedido recibido fue de {pedido.get_tipo_display()}. '
+            f'Solicitado el {pedido.fecha_solicitud:%d/%m/%Y} y recibido el '
+            f'{pedido.fecha_cierre:%d/%m/%Y}. Demora: {demora} {unidad}.'
+        )
+    except Exception as error:
+        return f'Error al consultar el último pedido recibido: {error}'
+
+
 # --- 4. CONFIGURACIÓN DE GEMINI Y BOT ---
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
@@ -791,10 +828,36 @@ def normalizar_texto(texto):
     )
 
 
+def intencion_demora_pedidos(palabras):
+    habla_de_pedidos = bool(palabras & {
+        'pedido', 'pedidos', 'envio', 'envios', 'tramite', 'tramites',
+    })
+    if not habla_de_pedidos:
+        return None
+
+    habla_de_demora = bool(palabras & {
+        'demora', 'demoras', 'tardo', 'tarda', 'tardan',
+    })
+    if habla_de_demora and palabras & {'promedio', 'promedian'}:
+        return 'demora_promedio_pedidos'
+    if habla_de_demora and palabras & {'ultimo', 'ultimos', 'reciente', 'recibido'}:
+        return 'demora_ultimo_pedido'
+    if palabras & {
+        'llego', 'llega', 'llegada', 'recibido', 'recibieron',
+        'recibi', 'recepcion',
+    } and palabras & {'ultimo', 'ultimos', 'reciente', 'pedido', 'envio'}:
+        return 'ultimo_pedido_recibido'
+    return None
+
+
 def detectar_consulta_datos(texto_usuario):
     """Simula una clasificación de intención para enrutar consultas a Django."""
     texto = normalizar_texto(texto_usuario)
     palabras = set(re.findall(r'\b\w+\b', texto))
+
+    intencion_demora = intencion_demora_pedidos(palabras)
+    if intencion_demora:
+        return intencion_demora
 
     habla_de_sondas = 'sonda' in palabras or 'sondas' in palabras
     habla_de_movimientos = bool(palabras & {
