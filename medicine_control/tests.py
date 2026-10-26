@@ -331,7 +331,7 @@ class AstranaPwaTests(TestCase):
 		prompt = client.models.generate_content.call_args.kwargs['contents']
 		self.assertEqual(
 			client.models.generate_content.call_args.kwargs['model'],
-			'gemini-2.5-flash-lite',
+			'gemini-3.5-flash-lite',
 		)
 		self.assertIn('Quiero revisar las sondas.', prompt)
 		self.assertIn('¿Cuál es el consumo diario de sondas?', prompt)
