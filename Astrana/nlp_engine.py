@@ -321,6 +321,14 @@ INTENT_DATASET: Dict[str, List[str]] = {
         'cuanto clonazepam me queda',
         'ver pastillero',
     ],
+    'recargar_medicamento': [
+        'quiero recargar un medicamento',
+        'necesito reponer mis pastillas',
+        'agregar pastillas al pastillero',
+        'cargar stock de un remedio',
+        'quiero sumar pastillas a mi medicacion',
+        'reponer medicamento del pastillero',
+    ],
     'consultar_si_tomo': [
         'tome el enalapril hoy',
         'tome la pastilla de la manana',
@@ -425,6 +433,7 @@ INTENT_LABELS = {
     'iniciar_tramite': 'Iniciar un pedido o trámite',
     'cerrar_tramite': 'Cerrar un trámite al recibir el pedido',
     'pastillero_stock': 'Consultar stock de medicamentos del pastillero',
+    'recargar_medicamento': 'Recargar un medicamento del pastillero',
     'consultar_si_tomo': 'Verificar si tomé un medicamento',
     'consultar_tomas': 'Consultar historial o últimas tomas de un medicamento',
     'registrar_toma': 'Registrar que tomé un medicamento',

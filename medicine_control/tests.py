@@ -644,7 +644,14 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertIn('No pude entender esa consulta', response.json()['reply'])
 		self.assertIn('Consultar stock de sondas', response.json()['reply'])
+		self.assertIn('Recargar un medicamento del pastillero', response.json()['reply'])
 		self.assertIn('recargar [nombre del medicamento]', response.json()['reply'])
+		self.assertEqual(
+			nlp_engine.resolver_intencion_objetivo(
+				'Recargar un medicamento del pastillero',
+			),
+			'recargar_medicamento',
+		)
 		with patch.object(astrana, 'gemini_client', None):
 			response = self.client.post(
 				reverse('astrana_chat_api'),
@@ -1509,6 +1516,37 @@ class PastilleroManagementTests(TestCase):
 
 		medicamento.refresh_from_db()
 		self.assertEqual(response.status_code, 200)
+		self.assertIn('Ahora quedan 24', response.json()['reply'])
+		self.assertEqual(medicamento.cantidad_total, 24)
+		self.assertTrue(
+			IngresoPastillero.objects.filter(
+				medicamento=medicamento,
+				cantidad=20,
+			).exists()
+		)
+
+	def test_pwa_chat_refill_can_ask_for_medicine_then_quantity(self):
+		medicamento = Pastillero.objects.create(nombre='Enalapril', cantidad_total=4)
+
+		response = self.client.post(reverse('astrana_chat_api'), {
+			'message': 'Quiero recargar mis pastillas'
+		}, secure=True)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('¿Qué medicamento querés recargar?', response.json()['reply'])
+		self.assertIn('Enalapril', response.json()['reply'])
+
+		response = self.client.post(reverse('astrana_chat_api'), {
+			'message': 'Enalapril'
+		}, secure=True)
+
+		self.assertIn('¿Cuántas pastillas', response.json()['reply'])
+
+		response = self.client.post(reverse('astrana_chat_api'), {
+			'message': '20'
+		}, secure=True)
+
+		medicamento.refresh_from_db()
 		self.assertIn('Ahora quedan 24', response.json()['reply'])
 		self.assertEqual(medicamento.cantidad_total, 24)
 		self.assertTrue(

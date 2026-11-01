@@ -1095,6 +1095,40 @@ def astrana_chat_api(request):
             'agregar', 'agregale', 'sumar', 'sumale',
         }
         pide_recarga = bool(set(texto_normalizado.split()) & verbos_recarga)
+        if recarga_pendiente and recarga_pendiente.get('etapa') == 'medicamento':
+            if _es_confirmacion_negativa(texto_usuario):
+                del request.session['astrana_recarga_pendiente']
+                return respuesta_con_historial('Listo, cancelé la recarga.')
+            if medicamento_en_texto is None:
+                medicamentos = list(Pastillero.objects.order_by('nombre'))
+                if not medicamentos:
+                    del request.session['astrana_recarga_pendiente']
+                    return respuesta_con_historial(
+                        'No hay medicamentos registrados en el pastillero para recargar.'
+                    )
+                opciones = ', '.join(medicamento.nombre for medicamento in medicamentos)
+                return respuesta_con_historial(
+                    f'No encontré ese medicamento. Elegí uno registrado: {opciones}. '
+                    'También podés escribir “cancelar”.'
+                )
+            recarga_pendiente['medicamento_id'] = medicamento_en_texto.id
+            recarga_pendiente['etapa'] = 'cantidad'
+            request.session['astrana_recarga_pendiente'] = recarga_pendiente
+            cantidad = _cantidad_pastillas_recarga(texto_normalizado)
+            if cantidad and cantidad > 0:
+                del request.session['astrana_recarga_pendiente']
+                medicamento_en_texto = _registrar_recarga_pastillero(
+                    medicamento_en_texto,
+                    cantidad,
+                )
+                return respuesta_con_historial(
+                    f'✅ Agregué {cantidad} pastillas a {medicamento_en_texto.nombre}. '
+                    f'Ahora quedan {medicamento_en_texto.cantidad_total}.'
+                )
+            return respuesta_con_historial(
+                f'¿Cuántas pastillas querés agregar a {medicamento_en_texto.nombre}?'
+            )
+
         if recarga_pendiente and not pide_recarga and not medicamento_en_texto:
             if _es_confirmacion_negativa(texto_usuario):
                 del request.session['astrana_recarga_pendiente']
@@ -1124,6 +1158,7 @@ def astrana_chat_api(request):
             cantidad = _cantidad_pastillas_recarga(texto_normalizado)
             if not cantidad or cantidad <= 0:
                 request.session['astrana_recarga_pendiente'] = {
+                    'etapa': 'cantidad',
                     'medicamento_id': medicamento_en_texto.id,
                 }
                 return respuesta_con_historial(
@@ -1137,6 +1172,19 @@ def astrana_chat_api(request):
             return respuesta_con_historial(
                 f'✅ Agregué {cantidad} pastillas a {medicamento_en_texto.nombre}. '
                 f'Ahora quedan {medicamento_en_texto.cantidad_total}.'
+            )
+
+        if pide_recarga:
+            medicamentos = list(Pastillero.objects.order_by('nombre'))
+            if not medicamentos:
+                return respuesta_con_historial(
+                    'No hay medicamentos registrados en el pastillero para recargar.'
+                )
+            request.session.pop('astrana_aprendizaje_pendiente', None)
+            request.session['astrana_recarga_pendiente'] = {'etapa': 'medicamento'}
+            opciones = ', '.join(medicamento.nombre for medicamento in medicamentos)
+            return respuesta_con_historial(
+                f'¿Qué medicamento querés recargar? Elegí uno registrado: {opciones}.'
             )
 
         aprendizaje_pendiente = request.session.get('astrana_aprendizaje_pendiente')
@@ -1446,6 +1494,40 @@ def astrana_chat_api(request):
             respuesta = astrana.consultar_ultimos_movimientos_sondas(tipo, solo_ultimo)
         elif intencion in {'consultar_tramites', 'movimientos_tramites'}:
             respuesta = astrana.consultar_ultimos_tramites()
+        elif intencion == 'recargar_medicamento':
+            if medicamento_en_texto is None:
+                medicamentos = list(Pastillero.objects.order_by('nombre'))
+                if not medicamentos:
+                    respuesta = 'No hay medicamentos registrados en el pastillero para recargar.'
+                else:
+                    request.session['astrana_recarga_pendiente'] = {
+                        'etapa': 'medicamento',
+                    }
+                    opciones = ', '.join(medicamento.nombre for medicamento in medicamentos)
+                    respuesta = (
+                        f'¿Qué medicamento querés recargar? Elegí uno registrado: {opciones}.'
+                    )
+            else:
+                cantidad = entidades.get('cantidad') or _cantidad_pastillas_recarga(
+                    texto_normalizado,
+                )
+                if cantidad and cantidad > 0:
+                    medicamento_en_texto = _registrar_recarga_pastillero(
+                        medicamento_en_texto,
+                        cantidad,
+                    )
+                    respuesta = (
+                        f'✅ Agregué {cantidad} pastillas a {medicamento_en_texto.nombre}. '
+                        f'Ahora quedan {medicamento_en_texto.cantidad_total}.'
+                    )
+                else:
+                    request.session['astrana_recarga_pendiente'] = {
+                        'etapa': 'cantidad',
+                        'medicamento_id': medicamento_en_texto.id,
+                    }
+                    respuesta = (
+                        f'¿Cuántas pastillas querés agregar a {medicamento_en_texto.nombre}?'
+                    )
         elif intencion in {'pastillero_stock', 'consultar_tomas', 'ultimas_tomas_pastillero'}:
             respuesta = (
                 astrana.consultar_stock_pastillero()
