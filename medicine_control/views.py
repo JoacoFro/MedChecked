@@ -973,11 +973,27 @@ def firebase_messaging_sw(request):
     return response
 
 
+def _limpiar_asteriscos_respuesta(respuesta):
+    return str(respuesta).replace('*', '')
+
+
 def astrana_chat_api(request):
     if request.method == 'GET':
         if not request.session.session_key:
             request.session.create()
-        return JsonResponse({'messages': request.session.get('astrana_chat_history', [])})
+        historial = request.session.get('astrana_chat_history', [])
+        historial_limpio = [
+            {
+                **mensaje,
+                'content': _limpiar_asteriscos_respuesta(mensaje.get('content', '')),
+            }
+            if mensaje.get('role') == 'assistant'
+            else mensaje
+            for mensaje in historial
+        ]
+        if historial_limpio != historial:
+            request.session['astrana_chat_history'] = historial_limpio
+        return JsonResponse({'messages': historial_limpio})
 
     if request.method != 'POST':
         return JsonResponse({'error': 'Método no permitido.'}, status=405)
@@ -1023,6 +1039,7 @@ def astrana_chat_api(request):
                     client=astrana.gemini_client,
                 )
 
+            respuesta = _limpiar_asteriscos_respuesta(respuesta)
             historial = request.session.get('astrana_chat_history', [])
             historial.extend([
                 {'role': 'user', 'content': texto_usuario},

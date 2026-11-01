@@ -357,6 +357,7 @@
         }
 
         function appendAstranaMessage(text, reproducirAutomaticamente = false, mostrarControlMp3 = true) {
+            const respuesta = String(text).replace(/\*/g, '');
             const row = document.createElement('div');
             row.className = 'flex items-start gap-3 animate-fade-in';
             const avatar = document.createElement('div');
@@ -370,7 +371,7 @@
             bubble.className = 'astrana-response-bubble p-3.5 rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-xl leading-relaxed whitespace-pre-wrap';
             const messageText = document.createElement('span');
             messageText.className = 'block';
-            messageText.textContent = text;
+            messageText.textContent = respuesta;
             bubble.appendChild(messageText);
             if (elevenLabsEnabled && mostrarControlMp3) {
                 const voiceButton = document.createElement('button');
@@ -378,7 +379,7 @@
                 voiceButton.className = 'mt-3 inline-flex items-center gap-2 text-xs text-amber-300 hover:text-amber-200';
                 voiceButton.title = 'Escuchar respuesta de Astrana';
                 voiceButton.innerHTML = '<i class="fa-solid fa-volume-high"></i><span>Escuchar</span>';
-                voiceButton.addEventListener('click', () => reproducirVozAstrana(text, voiceButton));
+                voiceButton.addEventListener('click', () => reproducirVozAstrana(respuesta, voiceButton));
                 bubble.appendChild(voiceButton);
                 const voiceStatus = document.createElement('span');
                 voiceStatus.className = 'block mt-1 text-xs text-rose-300';
@@ -386,7 +387,7 @@
                 bubble.appendChild(voiceStatus);
                 voiceButton.voiceStatus = voiceStatus;
                 if (reproducirAutomaticamente) {
-                    reproducirVozAstrana(text, voiceButton).catch(() => {});
+                    reproducirVozAstrana(respuesta, voiceButton).catch(() => {});
                 }
             }
             row.append(avatar, bubble);

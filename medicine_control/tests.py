@@ -54,6 +54,38 @@ class AstranaPwaTests(TestCase):
 		self.assertContains(response, 'astrana-response-bubble')
 		self.assertContains(response, 'user-message-bubble')
 
+	def test_astrana_chat_removes_asterisks_from_new_and_saved_responses(self):
+		from Astrana import main as astrana
+
+		Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=4,
+			unidades_por_caja=30,
+		)
+		with patch.object(astrana, 'gemini_client', None):
+			post_response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': 'Me decís el stock actual de sondas?'},
+				secure=True,
+			)
+
+		self.assertEqual(post_response.status_code, 200)
+		self.assertNotIn('*', post_response.json()['reply'])
+
+		session = self.client.session
+		session['astrana_chat_history'] = [
+			{'role': 'user', 'content': '¿Qué stock tengo?'},
+			{'role': 'assistant', 'content': '**Sondas**: 120 * unidades.'},
+		]
+		session.save()
+
+		get_response = self.client.get(reverse('astrana_chat_api'), secure=True)
+		self.assertEqual(
+			get_response.json()['messages'][1]['content'],
+			'Sondas: 120  unidades.',
+		)
+		self.assertNotIn('*', get_response.json()['messages'][1]['content'])
+
 	def test_intent_evaluation_set_covers_all_intents_without_training_duplicates(self):
 		from Astrana.nlp_engine import INTENT_DATASET, normalizar_texto
 
