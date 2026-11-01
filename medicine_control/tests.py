@@ -539,6 +539,89 @@ class AstranaPwaTests(TestCase):
 		self.assertNotIn('Tomas de los medicamentos', response.json()['reply'])
 		self.assertEqual(TomaPastillero.objects.filter(medicamento=medicamento).count(), 1)
 
+	def test_chat_personalizes_pastillero_stock_question_with_gemini(self):
+		from types import ModuleType, SimpleNamespace
+		from Astrana import main as astrana
+
+		Pastillero.objects.create(nombre='Enalapril', cantidad_total=12)
+		client = Mock()
+		client.models.generate_content.return_value.text = (
+			'Te quedan 12 pastillas de Enalapril en el pastillero.'
+		)
+		genai_module = ModuleType('google.genai')
+		genai_module.types = SimpleNamespace(
+			HttpOptions=Mock(return_value=SimpleNamespace(timeout=10000)),
+			GenerateContentConfig=Mock(
+				return_value=SimpleNamespace(
+					http_options=SimpleNamespace(timeout=10000),
+				)
+			),
+		)
+
+		with (
+			patch.dict('sys.modules', {'google.genai': genai_module}),
+			patch.object(astrana, 'gemini_client', client),
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': '¿Cuántas pastillas tengo?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response.json()['reply'],
+			'Te quedan 12 pastillas de Enalapril en el pastillero.',
+		)
+		client.models.generate_content.assert_called_once()
+		prompt = client.models.generate_content.call_args.kwargs['contents']
+		self.assertIn('Intención ya reconocida: pastillero_stock', prompt)
+		self.assertIn('Enalapril: 12 pastillas', prompt)
+
+	def test_chat_personalizes_open_orders_report_with_gemini(self):
+		from types import ModuleType, SimpleNamespace
+		from Astrana import main as astrana
+
+		astrana_client = Mock()
+		astrana_client.models.generate_content.return_value.text = (
+			'Tenés un trámite de obra social abierto.'
+		)
+		genai_module = ModuleType('google.genai')
+		genai_module.types = SimpleNamespace(
+			HttpOptions=Mock(return_value=SimpleNamespace(timeout=10000)),
+			GenerateContentConfig=Mock(
+				return_value=SimpleNamespace(
+					http_options=SimpleNamespace(timeout=10000),
+				)
+			),
+		)
+
+		with (
+			patch.dict('sys.modules', {'google.genai': genai_module}),
+			patch.object(astrana, 'gemini_client', astrana_client),
+			patch.object(
+				astrana,
+				'obtener_resumen_pedidos',
+				return_value='Trámite abierto: obra social.',
+			),
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': '¿Qué pedidos tengo abiertos?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response.json()['reply'],
+			'Tenés un trámite de obra social abierto.',
+		)
+		astrana_client.models.generate_content.assert_called_once()
+		self.assertIn(
+			'Trámite abierto: obra social.',
+			astrana_client.models.generate_content.call_args.kwargs['contents'],
+		)
+
 	def test_unknown_chat_message_does_not_fall_through_to_gemini_chat(self):
 		from Astrana import main as astrana
 		from Astrana.nlp_engine import NLPResult, nlp_engine
@@ -559,7 +642,16 @@ class AstranaPwaTests(TestCase):
 			)
 
 		self.assertEqual(response.status_code, 200)
-		self.assertIn('No pude resolver esa consulta', response.json()['reply'])
+		self.assertIn('No pude entender esa consulta', response.json()['reply'])
+		self.assertIn('Consultar stock de sondas', response.json()['reply'])
+		self.assertIn('recargar [nombre del medicamento]', response.json()['reply'])
+		with patch.object(astrana, 'gemini_client', None):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': 'Consultar stock de sondas'},
+				secure=True,
+			)
+		self.assertIn('guarde este ejemplo y actualice mi clasificador', response.json()['reply'])
 		gemini_client.chats.create.assert_not_called()
 		gemini_client.models.generate_content.assert_not_called()
 
@@ -1400,6 +1492,61 @@ class PastilleroManagementTests(TestCase):
 		self.assertIn('24', response.json()['reply'])
 		self.assertEqual(medicamento.cantidad_total, 24)
 		self.assertTrue(IngresoPastillero.objects.filter(medicamento=medicamento, cantidad=20).exists())
+
+	def test_pwa_chat_refills_existing_medication_with_followup_quantity(self):
+		medicamento = Pastillero.objects.create(nombre='Enalapril', cantidad_total=4)
+
+		response = self.client.post(reverse('astrana_chat_api'), {
+			'message': 'recargar Enalapril'
+		}, secure=True)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('¿Cuántas pastillas', response.json()['reply'])
+
+		response = self.client.post(reverse('astrana_chat_api'), {
+			'message': '20'
+		}, secure=True)
+
+		medicamento.refresh_from_db()
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('Ahora quedan 24', response.json()['reply'])
+		self.assertEqual(medicamento.cantidad_total, 24)
+		self.assertTrue(
+			IngresoPastillero.objects.filter(
+				medicamento=medicamento,
+				cantidad=20,
+			).exists()
+		)
+
+	def test_unknown_prompt_allows_starting_a_medication_refill(self):
+		from Astrana import main as astrana
+		from Astrana.nlp_engine import NLPResult, nlp_engine
+
+		medicamento = Pastillero.objects.create(nombre='Enalapril', cantidad_total=4)
+		with (
+			patch.object(astrana, 'detectar_consulta_datos', return_value=None),
+			patch.object(astrana, 'detectar_consulta_con_memoria', return_value=None),
+			patch.object(nlp_engine, 'intencion_aprendida', return_value=None),
+			patch.object(nlp_engine, 'interpretar', return_value=NLPResult('otro', 0.9)),
+			patch.object(nlp_engine, 'clasificar_intencion_semantica', return_value=None),
+		):
+			response = self.client.post(reverse('astrana_chat_api'), {
+				'message': 'Contame un chiste.'
+			}, secure=True)
+			self.assertIn('No pude entender esa consulta', response.json()['reply'])
+
+			response = self.client.post(reverse('astrana_chat_api'), {
+				'message': 'recargar Enalapril'
+			}, secure=True)
+			self.assertIn('¿Cuántas pastillas', response.json()['reply'])
+
+			response = self.client.post(reverse('astrana_chat_api'), {
+				'message': '20'
+			}, secure=True)
+
+		medicamento.refresh_from_db()
+		self.assertIn('Ahora quedan 24', response.json()['reply'])
+		self.assertEqual(medicamento.cantidad_total, 24)
 
 	def test_pwa_chat_sets_recurring_time_for_named_medication(self):
 		medicamento = Pastillero.objects.create(nombre='Enalapril', cantidad_total=12)

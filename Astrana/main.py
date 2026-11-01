@@ -1022,6 +1022,14 @@ def detectar_consulta_datos(texto_usuario):
             return 'ultimas_tomas_pastillero'
         return 'verificar_toma_medicamento'
 
+    consulta_stock_pastillero = habla_de_pastillero and bool(palabras & {
+        'stock', 'cuanto', 'cuanta', 'cuantos', 'cuantas',
+        'queda', 'quedan', 'resta', 'restan', 'disponible',
+        'disponibles', 'inventario',
+    })
+    if consulta_stock_pastillero:
+        return 'pastillero_stock'
+
     habla_de_tramites = bool(palabras & {
         'pedido', 'pedidos', 'tramite', 'tramites', 'envio', 'envios',
     })

@@ -747,7 +747,21 @@ def _cantidad_pastillas_recarga(texto_normalizado):
     )
     if not coincidencia:
         coincidencia = re.search(r'\bcon\s+(\d+)\b', texto_normalizado)
+    if not coincidencia:
+        coincidencia = re.fullmatch(r'\s*(\d+)\s*', texto_normalizado)
     return int(coincidencia.group(1)) if coincidencia else None
+
+
+def _registrar_recarga_pastillero(medicamento, cantidad):
+    with transaction.atomic():
+        medicamento = Pastillero.objects.select_for_update().get(id=medicamento.id)
+        medicamento.cantidad_total += cantidad
+        medicamento.save(update_fields=['cantidad_total'])
+        IngresoPastillero.objects.create(
+            medicamento=medicamento,
+            cantidad=cantidad,
+        )
+    return medicamento
 
 
 def _elevenlabs_api_key():
@@ -1074,6 +1088,57 @@ def astrana_chat_api(request):
             )
 
         texto_normalizado = astrana.normalizar_texto(texto_usuario)
+        recarga_pendiente = request.session.get('astrana_recarga_pendiente')
+        medicamento_en_texto = _medicamento_pastillero_mencionado(texto_usuario)
+        verbos_recarga = {
+            'recargar', 'recarga', 'recargame', 'reponer', 'reponeme',
+            'agregar', 'agregale', 'sumar', 'sumale',
+        }
+        pide_recarga = bool(set(texto_normalizado.split()) & verbos_recarga)
+        if recarga_pendiente and not pide_recarga and not medicamento_en_texto:
+            if _es_confirmacion_negativa(texto_usuario):
+                del request.session['astrana_recarga_pendiente']
+                return respuesta_con_historial('Listo, cancelé la recarga.')
+            cantidad = _cantidad_pastillas_recarga(texto_normalizado)
+            if not cantidad or cantidad <= 0:
+                return respuesta_con_historial(
+                    'Decime una cantidad mayor a cero de pastillas o escribí “cancelar”.'
+                )
+            medicamento = Pastillero.objects.filter(
+                id=recarga_pendiente.get('medicamento_id'),
+            ).first()
+            del request.session['astrana_recarga_pendiente']
+            if medicamento is None:
+                return respuesta_con_historial(
+                    'Ese medicamento ya no está registrado en el pastillero. '
+                    'Decime el nombre de uno que sí esté cargado.'
+                )
+            medicamento = _registrar_recarga_pastillero(medicamento, cantidad)
+            return respuesta_con_historial(
+                f'✅ Agregué {cantidad} pastillas a {medicamento.nombre}. '
+                f'Ahora quedan {medicamento.cantidad_total}.'
+            )
+
+        if pide_recarga and medicamento_en_texto:
+            request.session.pop('astrana_aprendizaje_pendiente', None)
+            cantidad = _cantidad_pastillas_recarga(texto_normalizado)
+            if not cantidad or cantidad <= 0:
+                request.session['astrana_recarga_pendiente'] = {
+                    'medicamento_id': medicamento_en_texto.id,
+                }
+                return respuesta_con_historial(
+                    f'¿Cuántas pastillas querés agregar a {medicamento_en_texto.nombre}?'
+                )
+            medicamento_en_texto = _registrar_recarga_pastillero(
+                medicamento_en_texto,
+                cantidad,
+            )
+            request.session.pop('astrana_recarga_pendiente', None)
+            return respuesta_con_historial(
+                f'✅ Agregué {cantidad} pastillas a {medicamento_en_texto.nombre}. '
+                f'Ahora quedan {medicamento_en_texto.cantidad_total}.'
+            )
+
         aprendizaje_pendiente = request.session.get('astrana_aprendizaje_pendiente')
         if aprendizaje_pendiente:
             guardar_ultima_consulta = False
@@ -1273,7 +1338,10 @@ def astrana_chat_api(request):
             ])
         )
         if consulta_pedidos_abiertos:
-            return respuesta_con_historial(astrana.obtener_resumen_pedidos())
+            return respuesta_con_historial(
+                astrana.obtener_resumen_pedidos(),
+                personalizar=True,
+            )
 
         comando_memoria = astrana.procesar_comando_memoria(chat_id, texto_usuario)
         if comando_memoria:
@@ -1296,7 +1364,8 @@ def astrana_chat_api(request):
                 }
                 return respuesta_con_historial(
                     'No estoy segura de qué necesitás hacer y prefiero preguntarte antes de adivinar. '
-                    'Elegí un número o escribí una opción:\n'
+                    'Para recargar un medicamento registrado, decime “recargar [nombre]” y después la cantidad. '
+                    'También podés elegir un número o escribir una opción:\n'
                     f'{_mensaje_catalogo_intenciones_aprendizaje()}'
                 )
 
@@ -1317,31 +1386,6 @@ def astrana_chat_api(request):
                 intencion == intencion_semantica,
             )
         texto_normalizado = astrana.normalizar_texto(texto_usuario)
-        medicamento_en_texto = _medicamento_pastillero_mencionado(texto_usuario)
-        verbos_recarga = {'recargar', 'recarga', 'recargame', 'reponer', 'reponeme', 'agregar', 'agregale', 'sumar', 'sumale'}
-        pide_recarga = bool(set(texto_normalizado.split()) & verbos_recarga)
-
-        if medicamento_en_texto and pide_recarga:
-            cantidad = _cantidad_pastillas_recarga(texto_normalizado)
-            if not cantidad or cantidad <= 0:
-                return respuesta_con_historial(
-                    f'¿Cuántas pastillas querés agregar a {medicamento_en_texto.nombre}?'
-                )
-            with transaction.atomic():
-                medicamento_en_texto = Pastillero.objects.select_for_update().get(
-                    id=medicamento_en_texto.id,
-                )
-                medicamento_en_texto.cantidad_total += cantidad
-                medicamento_en_texto.save(update_fields=['cantidad_total'])
-                IngresoPastillero.objects.create(
-                    medicamento=medicamento_en_texto,
-                    cantidad=cantidad,
-                )
-            return respuesta_con_historial(
-                f'✅ Agregué {cantidad} pastillas a {medicamento_en_texto.nombre}. '
-                f'Ahora quedan {medicamento_en_texto.cantidad_total}.'
-            )
-
         pregunta_horario = (
             'a que hora' in texto_normalizado
             or 'horario de' in texto_normalizado
@@ -1490,7 +1534,17 @@ def astrana_chat_api(request):
             else:
                 respuesta = "❓ ¿A qué hora querés que te haga acordar? (Ejemplo: 'A las 14:30' o 'A las 9 hs')"
         else:
-            respuesta = 'No pude resolver esa consulta con las funciones locales de Astrana. Probá preguntarme por stock, trámites, envíos o pastillero.'
+            guardar_ultima_consulta = False
+            request.session['astrana_aprendizaje_pendiente'] = {
+                'etapa': 'elegir_intencion',
+                'frase': texto_usuario,
+            }
+            respuesta = (
+                'No pude entender esa consulta todavía. Puedo ayudarte a identificarla: '
+                'elegí el número o escribí la opción que buscabas. '
+                'También podés decir “recargar [nombre del medicamento]” y luego la cantidad.\n'
+                f'{_mensaje_catalogo_intenciones_aprendizaje()}'
+            )
 
         return respuesta_con_historial(respuesta, personalizar=True)
     except Exception:
