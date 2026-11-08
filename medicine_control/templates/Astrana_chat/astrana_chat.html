@@ -155,7 +155,7 @@
         <form id="chatForm" onsubmit="handleSendMessage(event)" class="flex items-center gap-2">
             {% csrf_token %}
             <input type="text" id="userInput" placeholder="Hablá con Astrana o envía un mensaje de voz..." 
-                   class="flex-1 bg-[#1c2541] border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-amber-400/80 transition">
+                   class="flex-1 bg-transparent border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-amber-400/80 transition">
 
                 <button type="button" id="micBtn" onclick="toggleVoiceConversation()" 
                     class="w-12 h-12 bg-[#1c2541] hover:bg-[#25325c] text-slate-200 border border-slate-700/80 rounded-2xl flex items-center justify-center transition shrink-0" title="Hablar con Astrana en tiempo real" aria-label="Iniciar conversación por voz">
