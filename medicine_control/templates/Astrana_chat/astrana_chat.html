@@ -134,8 +134,8 @@
     <main id="chatContainer" class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
         <!-- Saludo inicial de Astrana con Avatar Oficial -->
         <div class="flex items-start gap-3 animate-fade-in">
-            <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
-                <img src="{% static 'images/emblema-astrana.png' %}" alt="Astrana Avatar" class="w-full h-full object-contain p-0.5">
+            <div class="w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold">
+                <img src="{% static 'images/emblema-astrana.png' %}" alt="Astrana Avatar" class="w-full h-full object-contain p-1">
             </div>
             <div class="astrana-response-bubble p-4 rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-2">
                 <p>Hola Joaco. Soy <strong class="font-astrana text-amber-300">Astrana</strong> ✨</p>
@@ -362,11 +362,11 @@
             const row = document.createElement('div');
             row.className = 'flex items-start gap-3 animate-fade-in';
             const avatar = document.createElement('div');
-            avatar.className = 'w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]';
+            avatar.className = 'w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold';
             const image = document.createElement('img');
             image.src = astranaLogoUrl;
             image.alt = 'Astrana Avatar';
-            image.className = 'w-full h-full object-contain p-0.5';
+            image.className = 'w-full h-full object-contain p-1';
             avatar.appendChild(image);
             const bubble = document.createElement('div');
             bubble.className = 'astrana-response-bubble p-3.5 rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-xl leading-relaxed whitespace-pre-wrap';
@@ -452,8 +452,8 @@
             const id = 'loading-' + Date.now();
             const html = `
                 <div id="${id}" class="flex items-start gap-3">
-                    <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
-                        <img src="{% static 'images/emblema-astrana.png' %}" alt="Astrana Avatar" class="w-full h-full object-contain p-0.5 animate-pulse">
+                    <div class="w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold">
+                        <img src="{% static 'images/emblema-astrana.png' %}" alt="Astrana Avatar" class="w-full h-full object-contain p-1 animate-pulse">
                     </div>
                     <div class="bg-[#1c2541] border border-slate-700/70 p-3.5 rounded-2xl rounded-tl-none text-xs text-amber-300 flex items-center gap-2">
                         <i class="fa-solid fa-circle-notch animate-spin text-amber-400"></i>
@@ -657,8 +657,8 @@
                 card.id = cardId;
                 card.className = 'flex items-start gap-3 animate-fade-in';
                 card.innerHTML = `
-                    <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
-                        <img src="${astranaLogoUrl}" alt="Astrana" class="w-full h-full object-contain p-0.5">
+                    <div class="w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold">
+                        <img src="${astranaLogoUrl}" alt="Astrana" class="w-full h-full object-contain p-1">
                     </div>
                     <div class="bg-[#1c2541]/95 border border-amber-500/40 p-4 rounded-2xl rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-3 glow-gold">
                         <div class="flex items-center justify-between border-b border-amber-500/20 pb-2">
