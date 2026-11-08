@@ -134,7 +134,7 @@
     <main id="chatContainer" class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
         <!-- Saludo inicial de Astrana con Avatar Oficial -->
         <div class="flex items-start gap-3 animate-fade-in">
-            <div class="w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold">
+            <div class="w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold bg-[#0b132b]/70">
                 <img src="{% static 'images/emblema-astrana.png' %}" alt="Astrana Avatar" class="w-full h-full object-contain p-1">
             </div>
             <div class="astrana-response-bubble p-4 rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-2">
@@ -362,7 +362,7 @@
             const row = document.createElement('div');
             row.className = 'flex items-start gap-3 animate-fade-in';
             const avatar = document.createElement('div');
-            avatar.className = 'w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold';
+            avatar.className = 'w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold bg-[#0b132b]/70';
             const image = document.createElement('img');
             image.src = astranaLogoUrl;
             image.alt = 'Astrana Avatar';
@@ -452,7 +452,7 @@
             const id = 'loading-' + Date.now();
             const html = `
                 <div id="${id}" class="flex items-start gap-3">
-                    <div class="w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold">
+                    <div class="w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold bg-[#0b132b]/70">
                         <img src="{% static 'images/emblema-astrana.png' %}" alt="Astrana Avatar" class="w-full h-full object-contain p-1 animate-pulse">
                     </div>
                     <div class="bg-[#1c2541] border border-slate-700/70 p-3.5 rounded-2xl rounded-tl-none text-xs text-amber-300 flex items-center gap-2">
@@ -657,7 +657,7 @@
                 card.id = cardId;
                 card.className = 'flex items-start gap-3 animate-fade-in';
                 card.innerHTML = `
-                    <div class="w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold">
+                    <div class="w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold bg-[#0b132b]/70">
                         <img src="${astranaLogoUrl}" alt="Astrana" class="w-full h-full object-contain p-1">
                     </div>
                     <div class="bg-[#1c2541]/95 border border-amber-500/40 p-4 rounded-2xl rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-3 glow-gold">
