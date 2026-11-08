@@ -149,14 +149,14 @@
     </main>
 
     <!-- Barra de Input y Audio -->
-    <footer class="bg-transparent border-t border-slate-800 p-3.5">
+    <footer class="bg-transparent p-3.5">
         
         <p id="voiceStatus" class="hidden mb-2 text-center text-xs text-amber-300" role="status" aria-live="polite"></p>
 
         <form id="chatForm" onsubmit="handleSendMessage(event)" class="flex items-center gap-2">
             {% csrf_token %}
             <input type="text" id="userInput" placeholder="Hablá con Astrana o envía un mensaje de voz..." 
-                   class="flex-1 bg-transparent border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-amber-400/80 transition">
+                   class="flex-1 bg-[#0b132b] border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-amber-400/80 transition">
 
                 <button type="button" id="micBtn" onclick="toggleVoiceConversation()" 
                     class="w-12 h-12 bg-[#1c2541] hover:bg-[#25325c] text-slate-200 border border-slate-700/80 rounded-2xl flex items-center justify-center transition shrink-0" title="Hablar con Astrana en tiempo real" aria-label="Iniciar conversación por voz">
