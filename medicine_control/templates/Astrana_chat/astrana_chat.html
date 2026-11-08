@@ -130,8 +130,9 @@
         </div>
     </header>
 
+    <div class="chat-background flex flex-1 min-h-0 flex-col">
     <!-- Área de Chat -->
-    <main id="chatContainer" class="chat-background flex-1 overflow-y-auto p-4 space-y-4">
+    <main id="chatContainer" class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
         <!-- Saludo inicial de Astrana con Avatar Oficial -->
         <div class="flex items-start gap-3 animate-fade-in">
             <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
@@ -169,6 +170,7 @@
             </button>
         </form>
     </footer>
+    </div>
 
     <script>
         const chatContainer = document.getElementById('chatContainer');
