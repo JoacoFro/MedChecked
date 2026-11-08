@@ -40,7 +40,6 @@
 
         .chat-background {
             background-image:
-                linear-gradient(rgba(5, 10, 25, 0.58), rgba(5, 10, 25, 0.58)),
                 url("{% static 'images/astrana-chat-bg.png' %}");
             background-position: center;
             background-size: cover;
@@ -136,7 +135,7 @@
         <!-- Saludo inicial de Astrana con Avatar Oficial -->
         <div class="flex items-start gap-3 animate-fade-in">
             <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
-                <img src="{% url 'astrana_icon' %}" alt="Astrana Avatar" class="w-full h-full object-cover">
+                <img src="{% static 'images/emblema-astrana.png' %}" alt="Astrana Avatar" class="w-full h-full object-contain p-0.5">
             </div>
             <div class="astrana-response-bubble p-4 rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-2">
                 <p>Hola Joaco. Soy <strong class="font-astrana text-amber-300">Astrana</strong> ✨</p>
@@ -178,7 +177,7 @@
         const micBtn = document.getElementById('micBtn');
         const micIcon = document.getElementById('micIcon');
         const voiceStatus = document.getElementById('voiceStatus');
-        const astranaLogoUrl = "{% url 'astrana_icon' %}";
+        const astranaLogoUrl = "{% static 'images/emblema-astrana.png' %}";
         const firebaseConfig = JSON.parse(document.getElementById('firebase-config').textContent || '{}');
         const firebaseEnabled = JSON.parse(document.getElementById('firebase-enabled').textContent || 'false');
         const elevenLabsEnabled = JSON.parse(document.getElementById('elevenlabs-enabled').textContent || 'false');
@@ -367,7 +366,7 @@
             const image = document.createElement('img');
             image.src = astranaLogoUrl;
             image.alt = 'Astrana Avatar';
-            image.className = 'w-full h-full object-cover';
+            image.className = 'w-full h-full object-contain p-0.5';
             avatar.appendChild(image);
             const bubble = document.createElement('div');
             bubble.className = 'astrana-response-bubble p-3.5 rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-xl leading-relaxed whitespace-pre-wrap';
@@ -454,7 +453,7 @@
             const html = `
                 <div id="${id}" class="flex items-start gap-3">
                     <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
-                        <img src="{% url 'astrana_icon' %}" alt="Astrana Avatar" class="w-full h-full object-cover animate-pulse">
+                        <img src="{% static 'images/emblema-astrana.png' %}" alt="Astrana Avatar" class="w-full h-full object-contain p-0.5 animate-pulse">
                     </div>
                     <div class="bg-[#1c2541] border border-slate-700/70 p-3.5 rounded-2xl rounded-tl-none text-xs text-amber-300 flex items-center gap-2">
                         <i class="fa-solid fa-circle-notch animate-spin text-amber-400"></i>
@@ -659,7 +658,7 @@
                 card.className = 'flex items-start gap-3 animate-fade-in';
                 card.innerHTML = `
                     <div class="w-8 h-8 rounded-xl overflow-hidden border border-amber-400/40 shrink-0 mt-1 glow-gold bg-[#0b132b]">
-                        <img src="${astranaLogoUrl}" alt="Astrana" class="w-full h-full object-cover">
+                        <img src="${astranaLogoUrl}" alt="Astrana" class="w-full h-full object-contain p-0.5">
                     </div>
                     <div class="bg-[#1c2541]/95 border border-amber-500/40 p-4 rounded-2xl rounded-tl-none max-w-[88%] text-sm text-slate-200 shadow-xl space-y-3 glow-gold">
                         <div class="flex items-center justify-between border-b border-amber-500/20 pb-2">
