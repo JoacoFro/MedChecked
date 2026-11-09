@@ -182,6 +182,13 @@ class MemoriaAstrana(models.Model):
         ('preferencia', 'Preferencia'),
         ('contexto', 'Contexto'),
         ('alias', 'Alias'),
+        ('personal', 'Recuerdo personal'),
+        ('identidad', 'Identidad'),
+        ('preferencia_usuario', 'Preferencia personal'),
+        ('interes', 'Interés'),
+        ('proyecto', 'Proyecto'),
+        ('conversacion', 'Conversación importante'),
+        ('decision', 'Decisión'),
     ]
 
     chat_id = models.CharField(max_length=100, default='principal')

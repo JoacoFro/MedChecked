@@ -29,6 +29,7 @@ urlpatterns = [
     path('astrana/icon.jpg', views.astrana_icon, name='astrana_icon'),
     path('astrana/icon-<int:size>.png', views.astrana_pwa_icon, name='astrana_pwa_icon'),
     path('api/astrana/chat/', astrana_chat_api, name='astrana_chat_api'),
+    path('api/astrana/memoria/', views.astrana_memoria_api, name='astrana_memoria_api'),
     path('api/astrana/voz/', views.elevenlabs_voz_api, name='astrana_voz_api'),
     path('api/astrana/voz/token/', views.astrana_voice_token_api, name='astrana_voice_token'),
     path('api/astrana/fcm/guardar-token/', views.guardar_token_fcm, name='guardar_token_fcm'),

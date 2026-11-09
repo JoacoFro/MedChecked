@@ -53,6 +53,369 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, 'astrana-response-bubble')
 		self.assertContains(response, 'user-message-bubble')
+		self.assertContains(response, 'memoryModal')
+		self.assertContains(response, 'Guardado inteligente')
+
+	def test_personal_memories_can_be_created_corrected_and_deleted_per_session(self):
+		url = reverse('astrana_memoria_api')
+		response = self.client.post(
+			url,
+			data=json.dumps({
+				'action': 'create',
+				'category': 'proyecto',
+				'title': 'Proyecto Aurora',
+				'content': 'Preparar una aplicación para organizar tareas.',
+			}),
+			content_type='application/json',
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		memoria_id = response.json()['memory']['id']
+		chat_id = f'web-{self.client.session.session_key}'
+		memoria = MemoriaAstrana.objects.get(id=memoria_id)
+		self.assertEqual(memoria.chat_id, chat_id)
+		self.assertEqual(memoria.categoria, 'proyecto')
+		self.assertTrue(memoria.confirmada)
+
+		response = self.client.post(
+			url,
+			data=json.dumps({
+				'action': 'update',
+				'id': memoria_id,
+				'category': 'personal',
+				'title': 'Preferencia',
+				'content': 'Prefiero ejemplos simples.',
+			}),
+			content_type='application/json',
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		memoria.refresh_from_db()
+		self.assertEqual(memoria.categoria, 'personal')
+		self.assertEqual(memoria.clave, 'Preferencia')
+		self.assertEqual(memoria.valor, 'Prefiero ejemplos simples.')
+
+		otro_cliente = self.client_class()
+		otro_cliente.defaults['wsgi.url_scheme'] = 'https'
+		otro_chat = otro_cliente.get(url, secure=True).json()
+		self.assertEqual(otro_chat['memories'], [])
+
+		response = self.client.post(
+			url,
+			data=json.dumps({'action': 'delete', 'id': memoria_id}),
+			content_type='application/json',
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		memoria.refresh_from_db()
+		self.assertFalse(memoria.activa)
+
+	def test_memory_api_supports_identity_interests_conversations_and_decisions(self):
+		url = reverse('astrana_memoria_api')
+		categorias = {
+			'identidad': ('Perfil', 'Trabajo en desarrollo de software.'),
+			'preferencia_usuario': ('Preferencias', 'Prefiero ejemplos prácticos.'),
+			'interes': ('Intereses', 'Me interesa la astronomía.'),
+			'proyecto': ('Proyecto', 'Construyo una aplicación web.'),
+			'conversacion': ('Conversación', 'Acordamos revisar el diseño mañana.'),
+			'decision': ('Decisión', 'Decidimos usar Django para el proyecto.'),
+		}
+
+		for category, (title, content) in categorias.items():
+			with self.subTest(category=category):
+				response = self.client.post(
+					url,
+					data=json.dumps({
+						'action': 'create',
+						'category': category,
+						'title': title,
+						'content': content,
+					}),
+					content_type='application/json',
+					secure=True,
+				)
+				self.assertEqual(response.status_code, 200)
+				self.assertEqual(response.json()['memory']['category'], category)
+
+		memories = self.client.get(url, secure=True).json()['memories']
+		self.assertEqual(
+			{memory['category'] for memory in memories},
+			set(categorias),
+		)
+
+		from medicine_control.views import _obtener_recuerdos_relevantes
+
+		recuerdos = _obtener_recuerdos_relevantes(
+			f'web-{self.client.session.session_key}',
+			'¿Qué decidimos sobre Django?',
+		)
+		self.assertEqual(recuerdos[0]['titulo'], 'Decisión')
+
+	def test_memory_mode_and_style_preferences_can_be_saved(self):
+		url = reverse('astrana_memoria_api')
+		response = self.client.post(
+			url,
+			data=json.dumps({'action': 'set_mode', 'mode': 'intelligent'}),
+			content_type='application/json',
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		chat_id = f'web-{self.client.session.session_key}'
+		self.assertTrue(MemoriaAstrana.objects.filter(
+			chat_id=chat_id,
+			categoria='preferencia',
+			clave='modo_memoria',
+			valor='intelligent',
+			confirmada=True,
+		).exists())
+
+		response = self.client.post(
+			url,
+			data=json.dumps({
+				'action': 'set_preferences',
+				'preferences': {
+					'longitud': 'breve',
+					'emojis': 'no',
+					'tono': 'formal',
+				},
+			}),
+			content_type='application/json',
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		preferencia = MemoriaAstrana.objects.get(
+			chat_id='principal',
+			categoria='preferencia',
+			clave='estilo_respuesta',
+			activa=True,
+		)
+		self.assertEqual(preferencia.valor, 'longitud=breve;emojis=no;tono=formal')
+		listado = self.client.get(url, secure=True).json()
+		self.assertEqual(listado['mode'], 'intelligent')
+		self.assertEqual(listado['preferences'], {
+			'longitud': 'breve',
+			'emojis': 'no',
+			'tono': 'formal',
+		})
+
+	def test_intelligent_memory_requires_user_confirmation(self):
+		from Astrana import main as astrana
+
+		url = reverse('astrana_memoria_api')
+		self.client.post(
+			url,
+			data=json.dumps({'action': 'set_mode', 'mode': 'intelligent'}),
+			content_type='application/json',
+			secure=True,
+		)
+		session = self.client.session
+		chat_id = f'web-{session.session_key}'
+		suggestion = {
+			'category': 'proyecto',
+			'title': 'Proyecto Aurora',
+			'content': 'Preparar una aplicación para organizar tareas.',
+		}
+		Insumo.objects.create(
+			nombre='Sondas',
+			stock_actual_cajas=2,
+			unidades_por_caja=30,
+		)
+
+		with (
+			patch.object(astrana, 'gemini_client', None),
+			patch(
+				'medicine_control.views._detectar_recuerdo_inteligente',
+				return_value=suggestion,
+			) as detectar_recuerdo,
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': 'Me decís el stock actual de sondas?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json()['memory_suggestion'], suggestion)
+		detectar_recuerdo.assert_called_once()
+		self.assertFalse(MemoriaAstrana.objects.filter(
+			chat_id=chat_id,
+			categoria='proyecto',
+			clave='Proyecto Aurora',
+		).exists())
+
+		response = self.client.post(
+			url,
+			data=json.dumps({'action': 'confirm_suggestion'}),
+			content_type='application/json',
+			secure=True,
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(MemoriaAstrana.objects.filter(
+			chat_id=chat_id,
+			categoria='proyecto',
+			clave='Proyecto Aurora',
+			confirmada=True,
+			activa=True,
+		).exists())
+
+	def test_personal_memories_are_retrieved_by_relevant_words(self):
+		from medicine_control.views import _obtener_recuerdos_relevantes
+
+		self.client.get(reverse('astrana_memoria_api'), secure=True)
+		chat_id = f'web-{self.client.session.session_key}'
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='proyecto',
+			clave='Proyecto Aurora',
+			valor='Organizar tareas para una aplicación barrial.',
+			confirmada=True,
+		)
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='personal',
+			clave='Preferencia de lectura',
+			valor='Prefiero novelas históricas.',
+			confirmada=True,
+		)
+
+		recuerdos = _obtener_recuerdos_relevantes(
+			chat_id,
+			'¿Cómo seguimos con el proyecto Aurora de la aplicación?',
+		)
+
+		self.assertEqual(len(recuerdos), 1)
+		self.assertEqual(recuerdos[0]['titulo'], 'Proyecto Aurora')
+
+	def test_unknown_chat_question_can_resume_a_saved_project(self):
+		from Astrana import main as astrana
+
+		self.client.get(reverse('astrana_memoria_api'), secure=True)
+		chat_id = f'web-{self.client.session.session_key}'
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='proyecto',
+			clave='Proyecto Aurora',
+			valor='Organizar tareas para una aplicación barrial.',
+			confirmada=True,
+		)
+		resultado_nlp = Mock(
+			intent='otro',
+			confidence=0.9,
+			entities={},
+		)
+		with (
+			patch.object(astrana.nlp_engine, 'interpretar', return_value=resultado_nlp),
+			patch.object(astrana.nlp_engine, 'intencion_aprendida', return_value=None),
+			patch.object(astrana.nlp_engine, 'clasificar_intencion_semantica', return_value=None),
+			patch.object(astrana, 'detectar_consulta_datos', return_value=None),
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': '¿Cómo seguimos con el proyecto Aurora?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('Proyecto Aurora', response.json()['reply'])
+		self.assertIn('Organizar tareas', response.json()['reply'])
+
+	def test_intelligent_memory_suggestions_are_bounded_and_exclude_sensitive_topics(self):
+		from Astrana import main as astrana
+
+		client = Mock()
+		client.models.generate_content.return_value.text = json.dumps({
+			'category': 'proyecto',
+			'title': 'Proyecto Aurora',
+			'content': 'Organizar tareas para una aplicación barrial.',
+		})
+		genai_types = Mock()
+		genai_types.GenerateContentConfig.return_value = Mock()
+		genai_types.HttpOptions.return_value = Mock()
+		with (
+			patch.object(astrana, 'gemini_client', client),
+			patch.object(astrana, 'types', genai_types),
+		):
+			suggestion = medicine_views._detectar_recuerdo_inteligente(
+				astrana,
+				'Estoy trabajando en mi proyecto Aurora.',
+				'Podemos avanzar con un plan.',
+				[],
+			)
+
+		self.assertEqual(suggestion['category'], 'proyecto')
+		self.assertIn('Aurora', suggestion['title'])
+		prompt = client.models.generate_content.call_args.kwargs['contents']
+		self.assertIn('No infieras datos', prompt)
+		self.assertIn('No guardes datos médicos', prompt)
+
+		client.models.generate_content.return_value.text = json.dumps({
+			'category': 'personal',
+			'title': 'Medicación',
+			'content': 'Toma una medicación todos los días.',
+		})
+		with (
+			patch.object(astrana, 'gemini_client', client),
+			patch.object(astrana, 'types', genai_types),
+		):
+			suggestion = medicine_views._detectar_recuerdo_inteligente(
+				astrana,
+				'Prefiero organizar mi rutina.',
+				'Podemos ordenar tus actividades.',
+				[],
+			)
+		self.assertIsNone(suggestion)
+
+		client.models.generate_content.return_value.text = json.dumps({
+			'category': 'identidad',
+			'title': 'Contacto',
+			'content': 'Su número de teléfono es 5551234.',
+		})
+		with (
+			patch.object(astrana, 'gemini_client', client),
+			patch.object(astrana, 'types', genai_types),
+		):
+			suggestion = medicine_views._detectar_recuerdo_inteligente(
+				astrana,
+				'Prefiero organizar mi rutina.',
+				'Podemos ordenar tus actividades.',
+				[],
+			)
+		self.assertIsNone(suggestion)
+
+		client.models.generate_content.return_value.text = json.dumps({
+			'category': 'identidad',
+			'title': 'Profesión',
+			'content': 'Trabaja en desarrollo de software.',
+		})
+		with (
+			patch.object(astrana, 'gemini_client', client),
+			patch.object(astrana, 'types', genai_types),
+		):
+			suggestion = medicine_views._detectar_recuerdo_inteligente(
+				astrana,
+				'Soy desarrollador de software.',
+				'Puedo ayudarte con ese proyecto.',
+				[],
+			)
+		self.assertEqual(suggestion['category'], 'identidad')
+
+		client.models.generate_content.return_value.text = json.dumps({
+			'category': 'decision',
+			'title': 'Tecnología elegida',
+			'content': 'Decidimos usar Django para el proyecto.',
+		})
+		with (
+			patch.object(astrana, 'gemini_client', client),
+			patch.object(astrana, 'types', genai_types),
+		):
+			suggestion = medicine_views._detectar_recuerdo_inteligente(
+				astrana,
+				'Decidimos usar Django para el proyecto.',
+				'Perfecto, seguimos con Django.',
+				[],
+			)
+		self.assertEqual(suggestion['category'], 'decision')
 
 	def test_astrana_chat_removes_asterisks_from_new_and_saved_responses(self):
 		from Astrana import main as astrana
@@ -323,9 +686,13 @@ class AstranaPwaTests(TestCase):
 			astrana.obtener_preferencia_estilo(),
 			{'longitud': 'breve', 'emojis': 'no', 'tono': 'formal'},
 		)
+		astrana.guardar_memoria(
+			'otro-chat', 'preferencia', 'modo_memoria', 'inteligente'
+		)
 		recuerdos = astrana.procesar_comando_memoria('otro-chat', '¿Qué recordás?')
 		self.assertIn('estilo_respuesta', recuerdos)
 		self.assertIn('tono=formal', recuerdos)
+		self.assertNotIn('modo_memoria', recuerdos)
 
 		self.assertEqual(
 			astrana.actualizar_preferencia_estilo(
@@ -338,12 +705,25 @@ class AstranaPwaTests(TestCase):
 
 	def test_astrana_personalizer_uses_context_and_preserves_function_facts(self):
 		from Astrana.response_personalizer import personalizar_respuesta
+		from types import ModuleType, SimpleNamespace
 
 		resultado = '📈 Consumo IA: 8,6 Sondas / día.'
 		client = Mock()
 		client.models.generate_content.return_value.text = (
 			'Mirá, el consumo es de 8,6 sondas por día.'
 		)
+		gemini_types = Mock()
+		gemini_types.GenerateContentConfig.side_effect = (
+			lambda **kwargs: SimpleNamespace(**kwargs)
+		)
+		gemini_types.HttpOptions.side_effect = (
+			lambda **kwargs: SimpleNamespace(**kwargs)
+		)
+		gemini_module = ModuleType('google.genai')
+		gemini_module.types = gemini_types
+		genai_patch = patch.dict('sys.modules', {'google.genai': gemini_module})
+		genai_patch.start()
+		self.addCleanup(genai_patch.stop)
 		respuesta = personalizar_respuesta(
 			'¿Cuál es el consumo diario de sondas?',
 			resultado,
@@ -353,6 +733,10 @@ class AstranaPwaTests(TestCase):
 				{'role': 'assistant', 'content': 'Dale, ¿qué querés saber?'},
 			],
 			preferencias_estilo={'longitud': 'breve', 'emojis': 'no'},
+			recuerdos_relevantes=[{
+				'titulo': 'Proyecto Aurora',
+				'contenido': 'Organizar tareas para una aplicación barrial.',
+			}],
 			client=client,
 		)
 
@@ -368,6 +752,8 @@ class AstranaPwaTests(TestCase):
 		self.assertIn('Quiero revisar las sondas.', prompt)
 		self.assertIn('¿Cuál es el consumo diario de sondas?', prompt)
 		self.assertIn(resultado, prompt)
+		self.assertIn('Proyecto Aurora', prompt)
+		self.assertIn('Organizar tareas para una aplicación barrial.', prompt)
 		self.assertIn('Priorizá respuestas breves', prompt)
 		self.assertIn('No uses emojis', prompt)
 		self.assertEqual(

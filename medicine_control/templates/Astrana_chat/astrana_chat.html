@@ -117,6 +117,11 @@
 
         <!-- Acciones de Alertas y Notificaciones Push -->
         <div class="flex items-center gap-2">
+            <button type="button" onclick="abrirMemoriaAstrana()"
+                    class="w-10 h-10 rounded-xl border border-amber-500/30 text-amber-300 bg-amber-950/30 hover:bg-amber-900/50 transition"
+                    title="Administrar recuerdos y preferencias" aria-label="Administrar recuerdos y preferencias">
+                <i class="fa-solid fa-brain"></i>
+            </button>
             <button id="probarNotifBtn" onclick="probarNotificacionPush()" 
                     class="hidden text-[11px] px-2 py-1 rounded-xl border border-amber-500/30 text-amber-200 bg-amber-950/30 hover:bg-amber-900/50 transition flex items-center gap-1"
                     title="Enviar notificación de prueba a este dispositivo">
@@ -174,6 +179,94 @@
     </footer>
     </div>
 
+    <div id="memoryModal" class="hidden fixed inset-0 z-[70] bg-slate-950/80 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="memoryTitle">
+        <section class="mx-auto flex max-h-full w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-amber-500/40 bg-[#0b132b] shadow-2xl">
+            <header class="flex items-center justify-between border-b border-slate-700/70 p-4">
+                <h2 id="memoryTitle" class="font-astrana text-lg text-amber-200">Memoria de Astrana</h2>
+                <button type="button" onclick="cerrarMemoriaAstrana()" class="rounded-lg px-3 py-1 text-slate-300 hover:bg-slate-800" aria-label="Cerrar memoria">✕</button>
+            </header>
+            <div class="space-y-5 overflow-y-auto p-4">
+                <div>
+                    <label for="memoryMode" class="mb-1 block text-sm font-medium text-slate-200">Modalidad de guardado</label>
+                    <select id="memoryMode" class="w-full rounded-xl border border-slate-700 bg-[#1c2541] p-2.5 text-sm text-white">
+                        <option value="explicit">A — Guardado explícito</option>
+                        <option value="intelligent">B — Guardado inteligente (siempre pide confirmación)</option>
+                    </select>
+                    <p class="mt-1 text-xs text-slate-400">El modo inteligente requiere Gemini: analiza mensajes relevantes y propone recuerdos; solo se guardan cuando los confirmás. Evitá incluir información sensible.</p>
+                </div>
+
+                <section class="space-y-3 rounded-xl border border-slate-700/70 p-3">
+                    <h3 class="text-sm font-semibold text-amber-200">Preferencias de respuesta</h3>
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <label class="text-xs text-slate-300">Extensión
+                            <select id="memoryPreferenceLength" class="mt-1 w-full rounded-lg border border-slate-700 bg-[#1c2541] p-2 text-sm text-white">
+                                <option value="">Sin preferencia</option>
+                                <option value="breve">Breve</option>
+                                <option value="detallada">Detallada</option>
+                            </select>
+                        </label>
+                        <label class="text-xs text-slate-300">Emojis
+                            <select id="memoryPreferenceEmojis" class="mt-1 w-full rounded-lg border border-slate-700 bg-[#1c2541] p-2 text-sm text-white">
+                                <option value="">Sin preferencia</option>
+                                <option value="si">Con moderación</option>
+                                <option value="no">No usar</option>
+                            </select>
+                        </label>
+                        <label class="text-xs text-slate-300">Tono
+                            <select id="memoryPreferenceTone" class="mt-1 w-full rounded-lg border border-slate-700 bg-[#1c2541] p-2 text-sm text-white">
+                                <option value="">Sin preferencia</option>
+                                <option value="cercano">Cercano</option>
+                                <option value="formal">Formal</option>
+                            </select>
+                        </label>
+                    </div>
+                    <button type="button" onclick="guardarPreferenciasMemoria()" class="rounded-lg border border-amber-500/40 px-3 py-2 text-xs text-amber-200 hover:bg-amber-950/40">Guardar preferencias</button>
+                </section>
+
+                <section id="memorySuggestion" class="hidden rounded-xl border border-amber-400/50 bg-amber-950/30 p-3">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-amber-300">Recuerdo sugerido</p>
+                    <p id="memorySuggestionText" class="mt-2 whitespace-pre-wrap text-sm text-slate-200"></p>
+                    <div class="mt-3 flex gap-2">
+                        <button type="button" onclick="resolverSugerenciaMemoria(true)" class="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950">Guardar recuerdo</button>
+                        <button type="button" onclick="resolverSugerenciaMemoria(false)" class="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-200">No guardar</button>
+                    </div>
+                </section>
+
+                <form id="memoryForm" class="space-y-3 rounded-xl border border-slate-700/70 p-3" onsubmit="guardarRecuerdoAstrana(event)">
+                    <h3 class="text-sm font-semibold text-amber-200">Guardar o corregir un recuerdo</h3>
+                    <input type="hidden" id="memoryId">
+                    <label class="block text-xs text-slate-300">Tipo
+                        <select id="memoryCategory" required class="mt-1 w-full rounded-lg border border-slate-700 bg-[#1c2541] p-2.5 text-sm text-white">
+                            <option value="identidad">Quién soy</option>
+                            <option value="preferencia_usuario">Preferencias personales</option>
+                            <option value="interes">Intereses</option>
+                            <option value="proyecto">Proyecto</option>
+                            <option value="conversacion">Conversación importante</option>
+                            <option value="decision">Decisión</option>
+                            <option value="personal">Otro dato personal</option>
+                        </select>
+                    </label>
+                    <label class="block text-xs text-slate-300">Título
+                        <input id="memoryTitleInput" maxlength="100" required class="mt-1 w-full rounded-lg border border-slate-700 bg-[#1c2541] p-2.5 text-sm text-white" placeholder="Ej.: Proyecto MedChecked">
+                    </label>
+                    <label class="block text-xs text-slate-300">Qué querés que recuerde
+                        <textarea id="memoryContent" maxlength="2000" rows="3" required class="mt-1 w-full rounded-lg border border-slate-700 bg-[#1c2541] p-2.5 text-sm text-white" placeholder="Escribí el dato, preferencia o resumen que querés conservar."></textarea>
+                    </label>
+                    <div class="flex gap-2">
+                        <button type="submit" class="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950">Guardar recuerdo</button>
+                        <button type="button" onclick="limpiarFormularioMemoria()" class="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-200">Limpiar</button>
+                    </div>
+                </form>
+
+                <section>
+                    <h3 class="mb-2 text-sm font-semibold text-amber-200">Recuerdos guardados</h3>
+                    <p id="memoryStatus" class="mb-2 text-xs text-slate-400" role="status" aria-live="polite"></p>
+                    <div id="memoryList" class="space-y-2"></div>
+                </section>
+            </div>
+        </section>
+    </div>
+
     <script>
         const chatContainer = document.getElementById('chatContainer');
         const userInput = document.getElementById('userInput');
@@ -185,6 +278,8 @@
         const firebaseEnabled = JSON.parse(document.getElementById('firebase-enabled').textContent || 'false');
         const elevenLabsEnabled = JSON.parse(document.getElementById('elevenlabs-enabled').textContent || 'false');
         const speechEngineEnabled = JSON.parse(document.getElementById('speech-engine-enabled').textContent || 'false');
+        let propuestaMemoriaActiva = null;
+        let filaPropuestaMemoriaActiva = null;
         let firebaseApp = null;
         let firebaseMessaging = null;
         let firebaseServiceWorkerRegistration = null;
@@ -236,6 +331,275 @@
             micBtn.title = active ? 'Finalizar conversación por voz' : 'Hablar con Astrana en tiempo real';
             micIcon.className = active ? 'fa-solid fa-phone-slash text-base' : 'fa-solid fa-microphone text-base';
         }
+
+        function obtenerTokenCsrf() {
+            return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+        }
+
+        async function enviarAccionMemoria(payload) {
+            const response = await fetch('/api/astrana/memoria/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': obtenerTokenCsrf()
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'No se pudo actualizar la memoria.');
+            }
+            return data;
+        }
+
+        function mostrarEstadoMemoria(message, error = false) {
+            const status = document.getElementById('memoryStatus');
+            status.textContent = message;
+            status.classList.toggle('text-rose-300', error);
+            status.classList.toggle('text-slate-400', !error);
+        }
+
+        function limpiarFormularioMemoria() {
+            document.getElementById('memoryForm').reset();
+            document.getElementById('memoryId').value = '';
+        }
+
+        function renderizarMemoriasAstrana(memories) {
+            const list = document.getElementById('memoryList');
+            list.replaceChildren();
+            if (!memories.length) {
+                const empty = document.createElement('p');
+                empty.className = 'rounded-lg bg-slate-900/50 p-3 text-xs text-slate-400';
+                empty.textContent = 'Todavía no hay recuerdos personales o proyectos guardados.';
+                list.appendChild(empty);
+                return;
+            }
+
+            for (const memory of memories) {
+                const item = document.createElement('article');
+                item.className = 'rounded-xl border border-slate-700/70 bg-slate-900/40 p-3';
+                const heading = document.createElement('div');
+                heading.className = 'flex items-start justify-between gap-2';
+                const title = document.createElement('h4');
+                title.className = 'text-sm font-semibold text-slate-100';
+                title.textContent = memory.title;
+                const category = document.createElement('span');
+                category.className = 'shrink-0 text-[10px] uppercase tracking-wide text-amber-300';
+                const categoryLabels = {
+                    identidad: 'Quién soy',
+                    preferencia_usuario: 'Preferencia',
+                    interes: 'Interés',
+                    proyecto: 'Proyecto',
+                    conversacion: 'Conversación importante',
+                    decision: 'Decisión',
+                    personal: 'Personal'
+                };
+                category.textContent = categoryLabels[memory.category] || 'Personal';
+                heading.append(title, category);
+
+                const content = document.createElement('p');
+                content.className = 'mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-300';
+                content.textContent = memory.content;
+
+                const actions = document.createElement('div');
+                actions.className = 'mt-3 flex gap-2';
+                const edit = document.createElement('button');
+                edit.type = 'button';
+                edit.className = 'rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800';
+                edit.textContent = 'Corregir';
+                edit.addEventListener('click', () => {
+                    document.getElementById('memoryId').value = memory.id;
+                    document.getElementById('memoryCategory').value = memory.category;
+                    document.getElementById('memoryTitleInput').value = memory.title;
+                    document.getElementById('memoryContent').value = memory.content;
+                    document.getElementById('memoryForm').scrollIntoView({ behavior: 'smooth' });
+                });
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'rounded-lg border border-rose-500/40 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-950/40';
+                remove.textContent = 'Olvidar';
+                remove.addEventListener('click', async () => {
+                    if (!window.confirm(`¿Querés olvidar “${memory.title}”?`)) return;
+                    try {
+                        await enviarAccionMemoria({ action: 'delete', id: memory.id });
+                        mostrarEstadoMemoria('Recuerdo eliminado.');
+                        await cargarMemoriasAstrana();
+                    } catch (error) {
+                        mostrarEstadoMemoria(error.message, true);
+                    }
+                });
+                actions.append(edit, remove);
+                item.append(heading, content, actions);
+                list.appendChild(item);
+            }
+        }
+
+        async function cargarMemoriasAstrana() {
+            const response = await fetch('/api/astrana/memoria/');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'No se pudieron cargar los recuerdos.');
+            renderizarMemoriasAstrana(data.memories || []);
+            document.getElementById('memoryMode').value = data.mode || 'explicit';
+            const preferencias = data.preferences || {};
+            document.getElementById('memoryPreferenceLength').value = preferencias.longitud || '';
+            document.getElementById('memoryPreferenceEmojis').value = preferencias.emojis || '';
+            document.getElementById('memoryPreferenceTone').value = preferencias.tono || '';
+            mostrarSugerenciaEnPanel(data.pending_suggestion);
+        }
+
+        function mostrarSugerenciaEnPanel(suggestion) {
+            const section = document.getElementById('memorySuggestion');
+            section.classList.toggle('hidden', !suggestion);
+            if (suggestion) {
+                document.getElementById('memorySuggestionText').textContent =
+                    `${etiquetaCategoriaMemoria(suggestion.category)} · ${suggestion.title}\n${suggestion.content}`;
+            }
+        }
+
+        async function abrirMemoriaAstrana() {
+            document.getElementById('memoryModal').classList.remove('hidden');
+            mostrarEstadoMemoria('Cargando recuerdos…');
+            try {
+                await cargarMemoriasAstrana();
+                mostrarEstadoMemoria('');
+            } catch (error) {
+                mostrarEstadoMemoria(error.message, true);
+            }
+        }
+
+        function cerrarMemoriaAstrana() {
+            document.getElementById('memoryModal').classList.add('hidden');
+        }
+
+        async function guardarRecuerdoAstrana(event) {
+            event.preventDefault();
+            const id = document.getElementById('memoryId').value;
+            const payload = {
+                action: id ? 'update' : 'create',
+                category: document.getElementById('memoryCategory').value,
+                title: document.getElementById('memoryTitleInput').value.trim(),
+                content: document.getElementById('memoryContent').value.trim()
+            };
+            if (id) payload.id = Number(id);
+            try {
+                await enviarAccionMemoria(payload);
+                limpiarFormularioMemoria();
+                mostrarEstadoMemoria(id ? 'Recuerdo corregido.' : 'Recuerdo guardado.');
+                await cargarMemoriasAstrana();
+            } catch (error) {
+                mostrarEstadoMemoria(error.message, true);
+            }
+        }
+
+        async function guardarPreferenciasMemoria() {
+            const preferences = {
+                longitud: document.getElementById('memoryPreferenceLength').value,
+                emojis: document.getElementById('memoryPreferenceEmojis').value,
+                tono: document.getElementById('memoryPreferenceTone').value
+            };
+            try {
+                await enviarAccionMemoria({ action: 'set_preferences', preferences });
+                mostrarEstadoMemoria('Preferencias actualizadas.');
+            } catch (error) {
+                mostrarEstadoMemoria(error.message, true);
+            }
+        }
+
+        async function cambiarModalidadMemoria() {
+            try {
+                await enviarAccionMemoria({
+                    action: 'set_mode',
+                    mode: document.getElementById('memoryMode').value
+                });
+                mostrarEstadoMemoria('Modalidad de guardado actualizada.');
+            } catch (error) {
+                mostrarEstadoMemoria(error.message, true);
+            }
+        }
+
+        async function resolverSugerenciaMemoria(guardar) {
+            try {
+                if (guardar) {
+                    await enviarAccionMemoria({ action: 'confirm_suggestion' });
+                    mostrarEstadoMemoria('Recuerdo guardado.');
+                } else {
+                    await enviarAccionMemoria({ action: 'reject_suggestion' });
+                    mostrarEstadoMemoria('La propuesta no se guardó.');
+                }
+                mostrarSugerenciaEnPanel(null);
+                if (document.getElementById('memoryModal').classList.contains('hidden') === false) {
+                    await cargarMemoriasAstrana();
+                }
+                if (filaPropuestaMemoriaActiva) {
+                    filaPropuestaMemoriaActiva.remove();
+                    filaPropuestaMemoriaActiva = null;
+                }
+                propuestaMemoriaActiva = null;
+            } catch (error) {
+                appendAstranaMessage(error.message);
+            }
+        }
+
+        function mostrarPropuestaMemoria(suggestion) {
+            if (!suggestion || propuestaMemoriaActiva) return;
+            propuestaMemoriaActiva = suggestion;
+            filaPropuestaMemoriaActiva = document.createElement('div');
+            filaPropuestaMemoriaActiva.className = 'flex items-start gap-3 animate-fade-in';
+            const avatar = document.createElement('div');
+            avatar.className = 'w-10 h-10 rounded-2xl overflow-hidden border border-amber-400/60 shrink-0 mt-1 glow-gold bg-[#0b132b]/90';
+            const image = document.createElement('img');
+            image.src = astranaLogoUrl;
+            image.alt = 'Astrana';
+            image.className = 'w-full h-full object-contain p-1';
+            avatar.appendChild(image);
+
+            const bubble = document.createElement('div');
+            bubble.className = 'astrana-response-bubble p-3.5 rounded-tl-none max-w-[85%] text-sm text-slate-200 shadow-xl';
+            const prompt = document.createElement('p');
+            prompt.textContent = '¿Querés que recuerde esto para próximas conversaciones?';
+            const detail = document.createElement('p');
+            detail.className = 'mt-2 whitespace-pre-wrap text-xs text-slate-300';
+            detail.textContent = `${etiquetaCategoriaMemoria(suggestion.category)} · ${suggestion.title}\n${suggestion.content}`;
+            const actions = document.createElement('div');
+            actions.className = 'mt-3 flex gap-2';
+            const confirm = document.createElement('button');
+            confirm.type = 'button';
+            confirm.className = 'rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950';
+            confirm.textContent = 'Guardar';
+            confirm.addEventListener('click', () => resolverSugerenciaMemoria(true));
+            const reject = document.createElement('button');
+            reject.type = 'button';
+            reject.className = 'rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-200';
+            reject.textContent = 'No guardar';
+            reject.addEventListener('click', () => resolverSugerenciaMemoria(false));
+            actions.append(confirm, reject);
+            bubble.append(prompt, detail, actions);
+            filaPropuestaMemoriaActiva.append(avatar, bubble);
+            chatContainer.appendChild(filaPropuestaMemoriaActiva);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            mostrarSugerenciaEnPanel(suggestion);
+        }
+
+        function etiquetaCategoriaMemoria(category) {
+            const labels = {
+                identidad: 'Quién soy',
+                preferencia_usuario: 'Preferencia',
+                interes: 'Interés',
+                proyecto: 'Proyecto',
+                conversacion: 'Conversación importante',
+                decision: 'Decisión',
+                personal: 'Personal'
+            };
+            return labels[category] || 'Personal';
+        }
+
+        document.getElementById('memoryMode').addEventListener('change', cambiarModalidadMemoria);
+        document.getElementById('memoryModal').addEventListener('click', event => {
+            if (event.target.id === 'memoryModal') cerrarMemoriaAstrana();
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') cerrarMemoriaAstrana();
+        });
 
         async function toggleVoiceConversation() {
             if (voiceConversation) {
@@ -340,6 +704,7 @@
 
                 if (data.reply) {
                     appendAstranaMessage(data.reply);
+                    mostrarPropuestaMemoria(data.memory_suggestion);
                 } else {
                     appendAstranaMessage(data.error || "No pude procesar el mensaje.");
                 }
@@ -646,6 +1011,7 @@
                         appendAstranaMessage(message.content || '');
                     }
                 }
+                mostrarPropuestaMemoria(data.memory_suggestion);
             } catch (err) {
                 console.error('No se pudo recuperar el historial del chat:', err);
             }

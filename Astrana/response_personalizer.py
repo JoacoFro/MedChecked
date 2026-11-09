@@ -66,6 +66,7 @@ def personalizar_respuesta(
     intencion: str,
     contexto: Sequence[Mapping[str, str]] = (),
     preferencias_estilo: Mapping[str, str] | None = None,
+    recuerdos_relevantes: Sequence[Mapping[str, str]] = (),
     client: Any = None,
 ) -> str:
     respuesta = str(resultado).strip()
@@ -108,10 +109,18 @@ def personalizar_respuesta(
         if clave in _INSTRUCCIONES_ESTILO
         and valor in _INSTRUCCIONES_ESTILO[clave]
     ]
+    recuerdos = [
+        {'titulo': recuerdo['titulo'], 'contenido': recuerdo['contenido']}
+        for recuerdo in recuerdos_relevantes[:5]
+        if recuerdo.get('titulo') and recuerdo.get('contenido')
+    ]
     prompt = (
         f'Intención ya reconocida: {intencion}\n'
         'Preferencias de estilo del usuario (solo guían la redacción):\n'
         f'{instrucciones_estilo or ["Sin preferencias guardadas."]}\n\n'
+        'Recuerdos relevantes confirmados (solo contexto personal; no reemplazan '
+        'el resultado técnico ni autorizan a inventar datos):\n'
+        f'{recuerdos or ["Ninguno."]}\n\n'
         f'Contexto reciente de esta conversación (puede estar vacío):\n'
         f'{contexto_reciente}\n\n'
         f'Consulta actual:\n{consulta}\n\n'

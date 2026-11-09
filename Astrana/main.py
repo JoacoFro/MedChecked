@@ -282,8 +282,17 @@ def procesar_comando_memoria(chat_id, texto_usuario):
 
     if texto in {'que recordas', 'que recordas de mi', 'que recordas sobre mi'}:
         memorias = list(MemoriaAstrana.objects.filter(
-            chat_id=str(chat_id), activa=True, confirmada=True
+            chat_id=str(chat_id),
+            activa=True,
+            confirmada=True,
         ).order_by('-fecha_actualizacion')[:20])
+        memorias = [
+            memoria for memoria in memorias
+            if not (
+                memoria.categoria == 'preferencia'
+                and memoria.clave == 'modo_memoria'
+            )
+        ]
         if str(chat_id) != 'principal':
             preferencia_estilo = MemoriaAstrana.objects.filter(
                 chat_id='principal',
