@@ -46,8 +46,8 @@
         }
 
         .astrana-response-bubble {
-            background: rgba(28, 37, 65, 0.94);
-            border: 1px solid rgba(100, 116, 139, 0.45);
+            background: rgba(51, 70, 141, 0.93);
+            border: 1px solid rgba(51, 70, 141, 0.93);
             border-radius: 22px;
             box-shadow: 0 12px 28px rgba(2, 6, 23, 0.28);
         }
@@ -89,6 +89,9 @@
     </style>
 </head>
 <body class="bg-[#0b132b] text-slate-100 h-screen flex flex-col justify-between overflow-hidden">
+    <div id="appSplash" style="position:fixed;inset:0;z-index:100;display:flex;align-items:flex-end;justify-content:center;padding:24px 16px calc(24px + env(safe-area-inset-bottom));background:#0b132b;color:#cbd5e1;font-size:12px;letter-spacing:0.08em;">
+        Astrana Powered by Gemini
+    </div>
 
     <!-- Header / Barra Superior con Logo Oficial de Astrana -->
     <header class="bg-[#0b132b]/90 backdrop-blur-xl border-b border-amber-500/20 p-3.5 sticky top-0 z-50 flex items-center justify-between">
@@ -731,6 +734,9 @@
 
         // Consultar estado de tomas al cargar la pantalla
         document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                document.getElementById('appSplash')?.remove();
+            }, 500);
             restaurarHistorialChat();
             verificarPastilleroHoy();
         });
