@@ -1,10 +1,10 @@
-const CACHE_NAME = 'astrana-pwa-v5';
+const CACHE_NAME = 'astrana-pwa-v6';
 const FIREBASE_CONFIG = __FIREBASE_CONFIG__;
 const ASSETS = [
   '/astrana/',
   '/manifest.json',
-  '/astrana/icon-192.png',
-  '/astrana/icon-512.png'
+  '/astrana/icon-192.png?v=2',
+  '/astrana/icon-512.png?v=2'
 ];
 
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
@@ -27,8 +27,8 @@ if (messaging) {
     const title = payload.notification?.title || payload.data?.title || '💊 Astrana';
     const options = {
       body: payload.notification?.body || payload.data?.body || 'Tienes un recordatorio de Astrana.',
-      icon: '/astrana/icon-192.png',
-      badge: '/astrana/icon-192.png',
+      icon: '/astrana/icon-192.png?v=2',
+      badge: '/astrana/icon-192.png?v=2',
       data: { ...payload.data, url: payload.data?.url || '/astrana/' },
       requireInteraction: true,
       actions: [
@@ -76,8 +76,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: data.icon || '/astrana/icon-192.png',
-    badge: data.badge || '/astrana/icon-192.png',
+    icon: data.icon || '/astrana/icon-192.png?v=2',
+    badge: data.badge || '/astrana/icon-192.png?v=2',
     vibrate: [200, 100, 200, 100, 200],
     data: data.data || {},
     requireInteraction: true,
@@ -112,8 +112,8 @@ self.addEventListener('notificationclick', (event) => {
         const msg = resData.message || 'Toma registrada con éxito en la base de datos.';
         return self.registration.showNotification('✅ Astrana: Toma Confirmada', {
           body: msg,
-          icon: '/astrana/icon-192.png',
-          badge: '/astrana/icon-192.png',
+          icon: '/astrana/icon-192.png?v=2',
+          badge: '/astrana/icon-192.png?v=2',
           timeout: 4000
         });
       })

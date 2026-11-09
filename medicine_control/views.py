@@ -946,7 +946,7 @@ def astrana_pwa_icon(request, size):
         'Astrana', 'static', 'images', f'astrana-icon-{size}.png',
     )
     response = FileResponse(open(icon_path, 'rb'), content_type='image/png')
-    response['Cache-Control'] = 'public, max-age=86400'
+    response['Cache-Control'] = 'no-cache'
     return response
 
 
