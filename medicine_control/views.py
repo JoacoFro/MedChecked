@@ -931,9 +931,9 @@ def probar_push_fcm(request):
 def astrana_icon(request):
     icon_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
-        'Astrana', 'static', 'images', 'astrana-logo.jpg',
+        'Astrana', 'static', 'images', 'astrana-logo.png',
     )
-    response = FileResponse(open(icon_path, 'rb'), content_type='image/jpeg')
+    response = FileResponse(open(icon_path, 'rb'), content_type='image/png')
     response['Cache-Control'] = 'public, max-age=86400'
     return response
 

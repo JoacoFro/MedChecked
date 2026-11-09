@@ -1,4 +1,4 @@
-const CACHE_NAME = 'astrana-pwa-v4';
+const CACHE_NAME = 'astrana-pwa-v5';
 const FIREBASE_CONFIG = __FIREBASE_CONFIG__;
 const ASSETS = [
   '/astrana/',

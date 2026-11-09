@@ -12,8 +12,8 @@
     <!-- PWA Metadata & Favicon -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0d1b2a">
-    <link rel="icon" type="image/jpeg" href="{% url 'astrana_icon' %}">
-    <link rel="apple-touch-icon" sizes="640x640" href="{% url 'astrana_icon' %}">
+    <link rel="icon" type="image/png" href="{% static 'images/astrana-icon-192.png' %}">
+    <link rel="apple-touch-icon" sizes="512x512" href="{% static 'images/astrana-icon-512.png' %}">
 
     <!-- Tailwind CSS & FontAwesome -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -96,7 +96,7 @@
             <div class="relative">
                 <!-- Logo de Astrana encuadrado con marco dorado -->
                 <div class="w-11 h-11 rounded-2xl overflow-hidden border border-amber-400/50 glow-gold bg-[#0b132b] p-0.5">
-                    <img src="{% url 'astrana_icon' %}" alt="Astrana Logo" class="w-full h-full object-cover rounded-[13px]">
+                    <img src="{% static 'images/emblema-astrana.png' %}" alt="Astrana Logo" class="w-full h-full object-contain rounded-[13px]">
                 </div>
                 <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[#0b132b]"></span>
             </div>
