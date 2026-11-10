@@ -1229,16 +1229,86 @@ _PALABRAS_IGNORADAS_MEMORIA = {
     'tengo', 'tiene', 'quiero', 'queres', 'decime', 'decis', 'donde', 'cuando',
     'cual', 'cuales', 'algo', 'todo', 'hace', 'hacer', 'ahora', 'despues',
 }
+_ALIAS_TERMINOS_MEMORIA = {
+    'naci': {'nacio', 'nacimiento', 'fecha'},
+    'nacio': {'naci', 'nacimiento', 'fecha'},
+    'nacimiento': {'naci', 'nacio', 'fecha'},
+    'edad': {'anos', 'naci', 'nacimiento'},
+    'anos': {'edad', 'naci', 'nacimiento'},
+    'quien': {'nombre', 'llamo', 'creador'},
+    'nombre': {'quien', 'llamo'},
+    'llamo': {'quien', 'nombre'},
+    'interes': {'intereses', 'gusta', 'interesa'},
+    'intereses': {'interes', 'gusta', 'interesa'},
+    'gusta': {'interes', 'intereses', 'preferencia'},
+    'decision': {'decidi', 'decidimos', 'acordamos'},
+    'decidi': {'decision', 'decidimos'},
+    'decidimos': {'decision', 'acordamos'},
+    'acordamos': {'decision', 'decidimos'},
+}
+
+
+def _es_consulta_de_recuerdo(consulta):
+    from Astrana.main import normalizar_texto
+
+    texto = normalizar_texto(consulta)
+    frases_de_recuerdo = (
+        'quien soy',
+        'como me llamo',
+        'que sabes de mi',
+        'que recordas de mi',
+        'que recordas sobre mi',
+        'que tenes guardado sobre mi',
+        'cuando naci',
+        'fecha de nacimiento',
+        'que edad tengo',
+        'cuantos anos tengo',
+        'que decidimos',
+        'que acordamos',
+        'cual era mi proyecto',
+        'en que estaba trabajando',
+        'que me gusta',
+        'cuales son mis intereses',
+    )
+    return any(frase in texto for frase in frases_de_recuerdo)
 
 
 def _obtener_recuerdos_relevantes(chat_id, consulta):
     from Astrana.main import normalizar_texto
 
+    texto_normalizado = normalizar_texto(consulta)
+    if any(frase in texto_normalizado for frase in (
+        'quien soy',
+        'que sabes de mi',
+        'que recordas de mi',
+        'que recordas sobre mi',
+        'que tenes guardado sobre mi',
+    )):
+        recuerdos = MemoriaAstrana.objects.filter(
+            chat_id=chat_id,
+            categoria__in=_CATEGORIAS_MEMORIA_PERSONAL,
+            activa=True,
+            confirmada=True,
+        ).order_by('-fecha_actualizacion')[:5]
+        return [
+            {
+                'categoria': recuerdo.categoria,
+                'titulo': recuerdo.clave,
+                'contenido': recuerdo.valor[:500],
+            }
+            for recuerdo in recuerdos
+        ]
+
     palabras_consulta = {
         palabra
-        for palabra in normalizar_texto(consulta).split()
+        for palabra in re.findall(r'\w+', texto_normalizado)
         if len(palabra) > 2 and palabra not in _PALABRAS_IGNORADAS_MEMORIA
     }
+    palabras_consulta.update({
+        relacionado
+        for palabra in palabras_consulta
+        for relacionado in _ALIAS_TERMINOS_MEMORIA.get(palabra, set())
+    })
     if not palabras_consulta:
         return []
 
@@ -1250,27 +1320,81 @@ def _obtener_recuerdos_relevantes(chat_id, consulta):
     )
     relevantes = []
     for recuerdo in recuerdos:
-        palabras_titulo = set(normalizar_texto(recuerdo.clave).split())
-        palabras_contenido = set(normalizar_texto(recuerdo.valor).split())
+        palabras_titulo = set(re.findall(r'\w+', normalizar_texto(recuerdo.clave)))
+        palabras_contenido = set(re.findall(r'\w+', normalizar_texto(recuerdo.valor)))
+        palabras_memoria = (
+            palabras_titulo
+            | palabras_contenido
+            | set(re.findall(r'\w+', normalizar_texto(recuerdo.categoria)))
+        )
+        palabras_memoria.update({
+            relacionado
+            for palabra in palabras_memoria
+            for relacionado in _ALIAS_TERMINOS_MEMORIA.get(palabra, set())
+        })
         coincidencias_titulo = palabras_consulta & palabras_titulo
-        coincidencias = palabras_consulta & palabras_contenido
+        coincidencias = palabras_consulta & palabras_memoria
         puntaje = len(coincidencias_titulo) * 2 + len(coincidencias)
         if puntaje:
             relevantes.append((
                 puntaje,
                 recuerdo.fecha_actualizacion,
-                {'titulo': recuerdo.clave, 'contenido': recuerdo.valor[:500]},
+                {
+                    'categoria': recuerdo.categoria,
+                    'titulo': recuerdo.clave,
+                    'contenido': recuerdo.valor[:500],
+                },
             ))
     relevantes.sort(key=lambda recuerdo: (recuerdo[0], recuerdo[1]), reverse=True)
     return [recuerdo[2] for recuerdo in relevantes[:5]]
 
 
 def _formatear_recuerdos_relevantes(recuerdos):
-    lineas = [
-        f"• {recuerdo['titulo']}: {recuerdo['contenido']}"
-        for recuerdo in recuerdos[:3]
-    ]
-    return '🧠 Esto tengo guardado y puedo retomar:\n' + '\n'.join(lineas)
+    respuestas = []
+    for recuerdo in recuerdos[:3]:
+        contenido = recuerdo['contenido'].strip()
+        contenido = re.sub(
+            r'^el usuario indicó que nació(?: el)?\s*',
+            'Naciste el ',
+            contenido,
+            flags=re.IGNORECASE,
+        )
+        contenido = re.sub(
+            r'^el usuario indicó que\s*',
+            'Me contaste que ',
+            contenido,
+            flags=re.IGNORECASE,
+        )
+        contenido = re.sub(
+            r'^el usuario dijo que\s*',
+            'Me dijiste que ',
+            contenido,
+            flags=re.IGNORECASE,
+        )
+        contenido = re.sub(
+            r'^el usuario es\s*',
+            'Sos ',
+            contenido,
+            flags=re.IGNORECASE,
+        )
+        contenido = re.sub(
+            r'^el usuario tiene\s*',
+            'Tenés ',
+            contenido,
+            flags=re.IGNORECASE,
+        )
+        contenido = re.sub(
+            r'^el usuario trabaja\s*',
+            'Trabajás ',
+            contenido,
+            flags=re.IGNORECASE,
+        )
+        if recuerdo.get('categoria') in {'proyecto', 'decision', 'conversacion'}:
+            contenido = f"Sobre {recuerdo['titulo']}: {contenido}"
+        elif not re.search(r'[.!?…][”"\')\]]*$', contenido):
+            contenido = f"Sobre {recuerdo['titulo']}: {contenido.rstrip('.')}."
+        respuestas.append(contenido)
+    return '\n'.join(respuestas)
 
 
 _SENIALES_RECUERDO_INTELIGENTE = (
@@ -1486,6 +1610,19 @@ def astrana_chat_api(request):
             if transcripcion_usuario:
                 payload['transcription'] = transcripcion_usuario
             return JsonResponse(payload, status=status)
+
+        if _es_consulta_de_recuerdo(texto_usuario):
+            request.session.pop('astrana_aprendizaje_pendiente', None)
+            recuerdos = _obtener_recuerdos_relevantes(chat_id, texto_usuario)
+            if recuerdos:
+                guardar_ultima_consulta = False
+                return respuesta_con_historial(
+                    _formatear_recuerdos_relevantes(recuerdos),
+                )
+            guardar_ultima_consulta = False
+            return respuesta_con_historial(
+                'Todavía no tengo un recuerdo guardado sobre eso.',
+            )
 
         def proponer_aprendizaje(frase, intencion):
             nonlocal guardar_ultima_consulta
