@@ -478,6 +478,90 @@ class AstranaPwaTests(TestCase):
 			'Todavía no tengo guardada mi identidad en los recuerdos.',
 		)
 
+	def test_assistant_self_description_uses_multiple_identity_memories(self):
+		from Astrana import main as astrana
+
+		self.client.get(reverse('astrana_memoria_api'), secure=True)
+		chat_id = f'web-{self.client.session.session_key}'
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='identidad',
+			clave='Identidad de Astrana',
+			valor='Soy Astrana, una asistente virtual de MedChecked.',
+			confirmada=True,
+		)
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='identidad',
+			clave='Funciones de Astrana',
+			valor='Ayudo a gestionar stock, pedidos y recordatorios.',
+			confirmada=True,
+		)
+		client = Mock()
+		client.models.generate_content.return_value.text = (
+			'Soy Astrana, la asistente virtual de MedChecked. '
+			'Te ayudo a gestionar stock, pedidos y recordatorios.'
+		)
+
+		with (
+			patch.object(astrana, 'gemini_client', client),
+			patch.object(astrana, 'types', Mock()),
+		):
+			for pregunta in (
+				'¿Quién sos?',
+				'¿Quién eres?',
+				'Contame sobre vos.',
+				'¿Qué hacés?',
+				'¿Qué podés hacer?',
+			):
+				with self.subTest(pregunta=pregunta):
+					response = self.client.post(
+						reverse('astrana_chat_api'),
+						{'message': pregunta},
+						secure=True,
+					)
+					self.assertEqual(response.status_code, 200)
+					self.assertIn('MedChecked', response.json()['reply'])
+
+		prompt = client.models.generate_content.call_args.kwargs['contents']
+		self.assertIn('hasta cuatro frases', prompt)
+		self.assertIn('Funciones de Astrana', prompt)
+		self.assertIn('Ayudo a gestionar stock', prompt)
+
+	def test_assistant_self_description_without_gemini_uses_saved_identity_details(self):
+		from Astrana import main as astrana
+
+		self.client.get(reverse('astrana_memoria_api'), secure=True)
+		chat_id = f'web-{self.client.session.session_key}'
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='identidad',
+			clave='Identidad de Astrana',
+			valor='Soy Astrana, una asistente virtual de MedChecked.',
+			confirmada=True,
+		)
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='identidad',
+			clave='Funciones de Astrana',
+			valor='Ayudo a gestionar stock, pedidos y recordatorios.',
+			confirmada=True,
+		)
+
+		with (
+			patch.object(astrana, 'gemini_client', None),
+			patch.object(astrana, 'types', None),
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': '¿Quién sos?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('Soy Astrana', response.json()['reply'])
+		self.assertIn('Ayudo a gestionar stock', response.json()['reply'])
+
 	def test_personal_memory_question_bypasses_pending_intent_classifier(self):
 		self.client.get(reverse('astrana_memoria_api'), secure=True)
 		chat_id = f'web-{self.client.session.session_key}'
