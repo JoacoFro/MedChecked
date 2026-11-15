@@ -357,6 +357,85 @@ class AstranaPwaTests(TestCase):
 		)
 		self.assertEqual(len(recuerdos_generales), 2)
 
+	def test_semantic_memory_retrieval_resolves_unseen_astrana_question_before_classifier(self):
+		from Astrana import main as astrana
+
+		self.client.get(reverse('astrana_memoria_api'), secure=True)
+		chat_id = f'web-{self.client.session.session_key}'
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='identidad',
+			clave='Definición de Astrana',
+			valor=(
+				'Astrana es un asistente virtual con IA que gestiona stock de '
+				'medicamentos y recordatorios personales desde MedChecked, '
+				'funcionando bajo Gemini, desarrollado en Python y con aprendizaje '
+				'personalizado.'
+			),
+			confirmada=True,
+		)
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='interes',
+			clave='Intereses',
+			valor='Me interesa la astronomía.',
+			confirmada=True,
+		)
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='identidad',
+			clave='Recuerdo no confirmado',
+			valor='Este dato no debe usarse.',
+			confirmada=False,
+		)
+		client = Mock()
+		client.models.generate_content.side_effect = [
+			Mock(text=(
+				'{"memory_index": 1, "answer": '
+				'"Astrana funciona con Gemini y está desarrollada en Python."}'
+			)),
+		]
+		genai_types = Mock()
+		genai_types.GenerateContentConfig.return_value = Mock()
+		genai_types.HttpOptions.return_value = Mock()
+		session = self.client.session
+		session['astrana_aprendizaje_pendiente'] = {
+			'etapa': 'elegir_intencion',
+			'frase': 'consulta anterior',
+		}
+		session.save()
+
+		with (
+			patch.object(astrana, 'gemini_client', client),
+			patch.object(astrana, 'types', genai_types),
+			patch.object(astrana, 'detectar_consulta_datos', return_value=None),
+			patch.object(astrana.nlp_engine, 'intencion_aprendida', return_value=None),
+			patch.object(
+				astrana.nlp_engine,
+				'interpretar',
+				side_effect=AssertionError('El clasificador no debía ejecutarse.'),
+			),
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': '¿Cómo funciona?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response.json()['reply'],
+			'Astrana funciona con Gemini y está desarrollada en Python.',
+		)
+		self.assertNotIn('No pude identificar esa intención', response.json()['reply'])
+		self.assertNotIn('astrana_aprendizaje_pendiente', self.client.session)
+		self.assertEqual(client.models.generate_content.call_count, 1)
+		prompt_recuperacion = client.models.generate_content.call_args.kwargs['contents']
+		self.assertIn('compará el significado', prompt_recuperacion.lower())
+		self.assertIn('Definición de Astrana', prompt_recuperacion)
+		self.assertIn('Me interesa la astronomía', prompt_recuperacion)
+		self.assertNotIn('Recuerdo no confirmado', prompt_recuperacion)
+
 	def test_creator_question_uses_one_relevant_memory_and_natural_gemini_answer(self):
 		from Astrana import main as astrana
 
@@ -645,6 +724,48 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertIn('No pude identificar esa intención', response.json()['reply'])
 		self.assertIn('Elegí un número', response.json()['reply'])
+
+	def test_semantic_memory_search_keeps_classifier_when_no_memory_matches(self):
+		from Astrana import main as astrana
+
+		self.client.get(reverse('astrana_memoria_api'), secure=True)
+		chat_id = f'web-{self.client.session.session_key}'
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='interes',
+			clave='Intereses',
+			valor='Me interesa la astronomía.',
+			confirmada=True,
+		)
+		client = Mock()
+		client.models.generate_content.return_value.text = (
+			'{"memory_index": null, "answer": null}'
+		)
+		genai_types = Mock()
+		genai_types.GenerateContentConfig.return_value = Mock()
+		genai_types.HttpOptions.return_value = Mock()
+		session = self.client.session
+		session['astrana_aprendizaje_pendiente'] = {
+			'etapa': 'elegir_intencion',
+			'frase': 'consulta desconocida',
+		}
+		session.save()
+
+		with (
+			patch.object(astrana, 'gemini_client', client),
+			patch.object(astrana, 'types', genai_types),
+			patch.object(astrana, 'detectar_consulta_datos', return_value=None),
+			patch.object(astrana.nlp_engine, 'intencion_aprendida', return_value=None),
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': '¿Cuándo es mi cumpleaños?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('No pude identificar esa intención', response.json()['reply'])
+		self.assertEqual(client.models.generate_content.call_count, 1)
 
 	def test_unknown_chat_question_can_resume_a_saved_project(self):
 		from Astrana import main as astrana
