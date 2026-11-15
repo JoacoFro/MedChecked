@@ -55,6 +55,8 @@ class AstranaPwaTests(TestCase):
 		self.assertContains(response, 'user-message-bubble')
 		self.assertContains(response, 'memoryModal')
 		self.assertContains(response, 'Guardado inteligente')
+		self.assertContains(response, 'mostrarPropuestaMemoria(data.memory_suggestion)')
+		self.assertNotContains(response, 'id="memorySuggestion"')
 
 	def test_personal_memories_can_be_created_corrected_and_deleted_per_session(self):
 		url = reverse('astrana_memoria_api')
@@ -238,6 +240,14 @@ class AstranaPwaTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.json()['memory_suggestion'], suggestion)
 		detectar_recuerdo.assert_called_once()
+		historial = self.client.get(
+			reverse('astrana_chat_api'),
+			secure=True,
+		)
+		self.assertEqual(
+			historial.json()['memory_suggestion'],
+			suggestion,
+		)
 		self.assertFalse(MemoriaAstrana.objects.filter(
 			chat_id=chat_id,
 			categoria='proyecto',
