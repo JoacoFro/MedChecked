@@ -1251,6 +1251,45 @@ _ALIAS_TERMINOS_MEMORIA = {
 }
 
 
+def _es_consulta_nombre_asistente(astrana, consulta):
+    texto = astrana.normalizar_texto(consulta)
+    texto = re.sub(r'[^\w\s]', ' ', texto)
+    texto = re.sub(r'\s+', ' ', texto).strip()
+    return texto in {
+        'como es tu nombre',
+        'como te llamas',
+        'cual es tu nombre',
+        'como se llama astrana',
+        'cual es el nombre de astrana',
+        'quien eres',
+    }
+
+
+def _obtener_recuerdo_identidad_asistente(chat_id):
+    from Astrana.main import normalizar_texto
+
+    recuerdos = MemoriaAstrana.objects.filter(
+        chat_id=chat_id,
+        categoria__in=_CATEGORIAS_MEMORIA_PERSONAL,
+        activa=True,
+        confirmada=True,
+    ).order_by('-fecha_actualizacion')
+    for recuerdo in recuerdos:
+        texto = normalizar_texto(f'{recuerdo.clave} {recuerdo.valor}')
+        palabras = set(re.findall(r'\w+', texto))
+        menciona_astrana = 'astrana' in palabras
+        describe_identidad = bool(
+            palabras & {'asistente', 'nombre', 'llamo', 'identidad', 'soy'}
+        )
+        if menciona_astrana and describe_identidad:
+            return {
+                'categoria': recuerdo.categoria,
+                'titulo': recuerdo.clave,
+                'contenido': recuerdo.valor[:500],
+            }
+    return None
+
+
 def _obtener_recuerdos_relevantes(chat_id, consulta):
     from Astrana.main import normalizar_texto
 
@@ -1886,6 +1925,20 @@ def astrana_chat_api(request):
                 '¿Querés que guarde este recuerdo para próximas conversaciones?',
                 sugerencia_memoria=sugerencia,
             )
+
+        if _es_consulta_nombre_asistente(astrana, texto_usuario):
+            request.session.pop('astrana_aprendizaje_pendiente', None)
+            guardar_ultima_consulta = False
+            recuerdo_identidad = _obtener_recuerdo_identidad_asistente(chat_id)
+            if not recuerdo_identidad:
+                return respuesta_con_historial(
+                    'Todavía no tengo guardada mi identidad en los recuerdos.',
+                )
+            return respuesta_con_historial(_redactar_respuesta_con_recuerdos(
+                astrana,
+                texto_usuario,
+                [recuerdo_identidad],
+            ))
 
         recuerdos = _obtener_recuerdos_relevantes(chat_id, texto_usuario)
         if recuerdos:

@@ -414,6 +414,70 @@ class AstranaPwaTests(TestCase):
 			)
 		self.assertEqual(respuesta_sin_gemini, 'Joaco es mi creador.')
 
+	def test_assistant_name_variants_return_astrana_information_before_classifier(self):
+		self.client.get(reverse('astrana_memoria_api'), secure=True)
+		chat_id = f'web-{self.client.session.session_key}'
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='identidad',
+			clave='Identidad de Astrana',
+			valor='Soy Astrana, una asistente virtual de MedChecked.',
+			confirmada=True,
+		)
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='identidad',
+			clave='Identidad del usuario',
+			valor='El usuario se llama Joaco.',
+			confirmada=True,
+		)
+		preguntas = (
+			'¿Cómo es tu nombre?',
+			'¿Cómo te llamas?',
+			'¿Cuál es tu nombre?',
+			'¿Cómo se llama Astrana?',
+		)
+		for pregunta in preguntas:
+			with self.subTest(pregunta=pregunta):
+				session = self.client.session
+				session['astrana_aprendizaje_pendiente'] = {
+					'etapa': 'elegir_intencion',
+					'frase': 'consulta anterior',
+				}
+				session.save()
+
+				response = self.client.post(
+					reverse('astrana_chat_api'),
+					{'message': pregunta},
+					secure=True,
+				)
+
+				self.assertEqual(response.status_code, 200)
+				self.assertIn('Soy Astrana', response.json()['reply'])
+				self.assertIn('MedChecked', response.json()['reply'])
+				self.assertNotIn('stock de medicamentos', response.json()['reply'])
+				self.assertNotIn(
+					'No pude identificar esa intención',
+					response.json()['reply'],
+				)
+				self.assertNotIn(
+					'astrana_aprendizaje_pendiente',
+					self.client.session,
+				)
+
+	def test_assistant_name_question_does_not_invent_identity_when_memory_missing(self):
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': '¿Cómo te llamas?'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response.json()['reply'],
+			'Todavía no tengo guardada mi identidad en los recuerdos.',
+		)
+
 	def test_personal_memory_question_bypasses_pending_intent_classifier(self):
 		self.client.get(reverse('astrana_memoria_api'), secure=True)
 		chat_id = f'web-{self.client.session.session_key}'
