@@ -1248,31 +1248,6 @@ _ALIAS_TERMINOS_MEMORIA = {
 }
 
 
-def _es_consulta_de_recuerdo(consulta):
-    from Astrana.main import normalizar_texto
-
-    texto = normalizar_texto(consulta)
-    frases_de_recuerdo = (
-        'quien soy',
-        'como me llamo',
-        'que sabes de mi',
-        'que recordas de mi',
-        'que recordas sobre mi',
-        'que tenes guardado sobre mi',
-        'cuando naci',
-        'fecha de nacimiento',
-        'que edad tengo',
-        'cuantos anos tengo',
-        'que decidimos',
-        'que acordamos',
-        'cual era mi proyecto',
-        'en que estaba trabajando',
-        'que me gusta',
-        'cuales son mis intereses',
-    )
-    return any(frase in texto for frase in frases_de_recuerdo)
-
-
 def _obtener_recuerdos_relevantes(chat_id, consulta):
     from Astrana.main import normalizar_texto
 
@@ -1335,7 +1310,7 @@ def _obtener_recuerdos_relevantes(chat_id, consulta):
         coincidencias_titulo = palabras_consulta & palabras_titulo
         coincidencias = palabras_consulta & palabras_memoria
         puntaje = len(coincidencias_titulo) * 2 + len(coincidencias)
-        if puntaje:
+        if puntaje >= 2:
             relevantes.append((
                 puntaje,
                 recuerdo.fecha_actualizacion,
@@ -1353,6 +1328,12 @@ def _formatear_recuerdos_relevantes(recuerdos):
     respuestas = []
     for recuerdo in recuerdos[:3]:
         contenido = recuerdo['contenido'].strip()
+        contenido = re.sub(
+            r'^el cumpleaños del usuario es\s*',
+            'Tu cumpleaños es ',
+            contenido,
+            flags=re.IGNORECASE,
+        )
         contenido = re.sub(
             r'^el usuario indicó que nació(?: el)?\s*',
             'Naciste el ',
@@ -1611,19 +1592,6 @@ def astrana_chat_api(request):
                 payload['transcription'] = transcripcion_usuario
             return JsonResponse(payload, status=status)
 
-        if _es_consulta_de_recuerdo(texto_usuario):
-            request.session.pop('astrana_aprendizaje_pendiente', None)
-            recuerdos = _obtener_recuerdos_relevantes(chat_id, texto_usuario)
-            if recuerdos:
-                guardar_ultima_consulta = False
-                return respuesta_con_historial(
-                    _formatear_recuerdos_relevantes(recuerdos),
-                )
-            guardar_ultima_consulta = False
-            return respuesta_con_historial(
-                'Todavía no tengo un recuerdo guardado sobre eso.',
-            )
-
         def proponer_aprendizaje(frase, intencion):
             nonlocal guardar_ultima_consulta
             from Astrana.nlp_engine import INTENT_LABELS
@@ -1739,6 +1707,14 @@ def astrana_chat_api(request):
             opciones = ', '.join(medicamento.nombre for medicamento in medicamentos)
             return respuesta_con_historial(
                 f'¿Qué medicamento querés recargar? Elegí uno registrado: {opciones}.'
+            )
+
+        recuerdos = _obtener_recuerdos_relevantes(chat_id, texto_usuario)
+        if recuerdos:
+            request.session.pop('astrana_aprendizaje_pendiente', None)
+            guardar_ultima_consulta = False
+            return respuesta_con_historial(
+                _formatear_recuerdos_relevantes(recuerdos),
             )
 
         aprendizaje_pendiente = request.session.get('astrana_aprendizaje_pendiente')

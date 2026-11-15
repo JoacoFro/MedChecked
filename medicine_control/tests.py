@@ -330,6 +330,52 @@ class AstranaPwaTests(TestCase):
 		)
 		self.assertIn('05/10/1994', response.json()['reply'])
 
+	def test_birthday_memory_is_checked_before_pending_intent_classifier(self):
+		self.client.get(reverse('astrana_memoria_api'), secure=True)
+		chat_id = f'web-{self.client.session.session_key}'
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='personal',
+			clave='Cumpleaños',
+			valor='El cumpleaños del usuario es el 5 de Octubre.',
+			confirmada=True,
+		)
+		session = self.client.session
+		session['astrana_aprendizaje_pendiente'] = {
+			'etapa': 'elegir_intencion',
+			'frase': 'cuando es mi cumpleaños',
+		}
+		session.save()
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': '¿Cuándo es mi cumpleaños?'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('Tu cumpleaños es el 5 de Octubre.', response.json()['reply'])
+		self.assertNotIn('No pude identificar esa intención', response.json()['reply'])
+		self.assertNotIn('astrana_aprendizaje_pendiente', self.client.session)
+
+	def test_unmatched_memory_query_keeps_classifier_clarification(self):
+		session = self.client.session
+		session['astrana_aprendizaje_pendiente'] = {
+			'etapa': 'elegir_intencion',
+			'frase': 'consulta desconocida',
+		}
+		session.save()
+
+		response = self.client.post(
+			reverse('astrana_chat_api'),
+			{'message': '¿Cuándo es mi cumpleaños?'},
+			secure=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('No pude identificar esa intención', response.json()['reply'])
+		self.assertIn('Elegí un número', response.json()['reply'])
+
 	def test_unknown_chat_question_can_resume_a_saved_project(self):
 		from Astrana import main as astrana
 
