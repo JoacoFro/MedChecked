@@ -472,6 +472,7 @@ class NLPEngine:
         self._semantic_labels: List[str] = []
         self._semantic_version_aprendizajes = None
         self._semantic_error_logged = False
+        self._memory_semantic_vectors = {}
 
     @staticmethod
     def semantic_shadow_enabled() -> bool:
@@ -479,20 +480,91 @@ class NLPEngine:
             '1', 'true', 'yes', 'on',
         }
 
+    @staticmethod
+    def memoria_semantica_habilitada() -> bool:
+        return os.environ.get(
+            'ASTRANA_MEMORY_SEMANTIC_ENABLED',
+            '',
+        ).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+    def _obtener_modelo_semantico(self):
+        if self._semantic_model is None:
+            from sentence_transformers import SentenceTransformer
+
+            self._semantic_model = SentenceTransformer(
+                'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+                device='cpu',
+            )
+        return self._semantic_model
+
+    def buscar_recuerdo_semantico(
+        self,
+        texto: str,
+        recuerdos: List[Any],
+    ) -> Optional[Tuple[int, float]]:
+        """Busca el recuerdo más relevante localmente y descarta coincidencias débiles."""
+        if not recuerdos or not self.memoria_semantica_habilitada():
+            return None
+
+        try:
+            modelo = self._obtener_modelo_semantico()
+            textos = tuple(
+                f'{recuerdo.categoria}. {recuerdo.clave}. {recuerdo.valor[:1000]}'
+                for recuerdo in recuerdos
+            )
+            vectores = self._memory_semantic_vectors.get(textos)
+            if vectores is None:
+                vectores = modelo.encode(
+                    list(textos),
+                    convert_to_numpy=True,
+                    normalize_embeddings=True,
+                    show_progress_bar=False,
+                )
+                if len(self._memory_semantic_vectors) >= 64:
+                    self._memory_semantic_vectors.clear()
+                self._memory_semantic_vectors[textos] = vectores
+
+            vector_consulta = modelo.encode(
+                [texto],
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )[0]
+            similitudes = vectores @ vector_consulta
+            ranking = similitudes.argsort()[::-1]
+            indice = int(ranking[0])
+            mejor_puntaje = float(similitudes[indice])
+            if mejor_puntaje < 0.20:
+                return None
+
+            segundo_puntaje = (
+                float(similitudes[int(ranking[1])])
+                if len(ranking) > 1
+                else 0.0
+            )
+            if (
+                len(ranking) < 2 and mejor_puntaje < 0.40
+            ) or (
+                len(ranking) > 1
+                and mejor_puntaje - segundo_puntaje < 0.08
+            ):
+                return None
+            return indice, mejor_puntaje
+        except Exception:
+            if not self._semantic_error_logged:
+                logger.exception(
+                    'No se pudo ejecutar la búsqueda semántica local de recuerdos de Astrana.'
+                )
+                self._semantic_error_logged = True
+            return None
+
     def clasificar_intencion_semantica(self, texto: str) -> Optional[Tuple[str, float]]:
         """Clasifica en modo sombra; nunca se usa para decidir la respuesta."""
         if not self.semantic_shadow_enabled():
             return None
 
         try:
-            if self._semantic_model is None:
-                from sentence_transformers import SentenceTransformer
-
-                self._semantic_model = SentenceTransformer(
-                    'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
-                    device='cpu',
-                    local_files_only=True,
-                )
+            self._obtener_modelo_semantico()
 
             if self._semantic_version_aprendizajes != self._version_aprendizajes:
                 textos = []

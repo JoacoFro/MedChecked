@@ -357,6 +357,7 @@ class AstranaPwaTests(TestCase):
 		)
 		self.assertEqual(len(recuerdos_generales), 2)
 
+	@patch.dict('os.environ', {'ASTRANA_MEMORY_SEMANTIC_ENABLED': 'true'})
 	def test_semantic_memory_retrieval_resolves_unseen_astrana_question_before_classifier(self):
 		from Astrana import main as astrana
 
@@ -389,12 +390,9 @@ class AstranaPwaTests(TestCase):
 			confirmada=False,
 		)
 		client = Mock()
-		client.models.generate_content.side_effect = [
-			Mock(text=(
-				'{"memory_index": 1, "answer": '
-				'"Astrana funciona con Gemini y está desarrollada en Python."}'
-			)),
-		]
+		client.models.generate_content.return_value.text = (
+			'Astrana funciona con Gemini y está desarrollada en Python.'
+		)
 		genai_types = Mock()
 		genai_types.GenerateContentConfig.return_value = Mock()
 		genai_types.HttpOptions.return_value = Mock()
@@ -410,6 +408,11 @@ class AstranaPwaTests(TestCase):
 			patch.object(astrana, 'types', genai_types),
 			patch.object(astrana, 'detectar_consulta_datos', return_value=None),
 			patch.object(astrana.nlp_engine, 'intencion_aprendida', return_value=None),
+			patch.object(
+				astrana.nlp_engine,
+				'buscar_recuerdo_semantico',
+				return_value=(1, 0.225),
+			) as buscar_recuerdo,
 			patch.object(
 				astrana.nlp_engine,
 				'interpretar',
@@ -430,11 +433,18 @@ class AstranaPwaTests(TestCase):
 		self.assertNotIn('No pude identificar esa intención', response.json()['reply'])
 		self.assertNotIn('astrana_aprendizaje_pendiente', self.client.session)
 		self.assertEqual(client.models.generate_content.call_count, 1)
-		prompt_recuperacion = client.models.generate_content.call_args.kwargs['contents']
-		self.assertIn('compará el significado', prompt_recuperacion.lower())
-		self.assertIn('Definición de Astrana', prompt_recuperacion)
-		self.assertIn('Me interesa la astronomía', prompt_recuperacion)
-		self.assertNotIn('Recuerdo no confirmado', prompt_recuperacion)
+		recuerdos_consultados = buscar_recuerdo.call_args.args[1]
+		self.assertEqual(
+			{recuerdo.clave for recuerdo in recuerdos_consultados},
+			{'Definición de Astrana', 'Intereses'},
+		)
+		self.assertNotIn(
+			'Recuerdo no confirmado',
+			{recuerdo.clave for recuerdo in recuerdos_consultados},
+		)
+		prompt_respuesta = client.models.generate_content.call_args.kwargs['contents']
+		self.assertIn('Definición de Astrana', prompt_respuesta)
+		self.assertNotIn('Me interesa la astronomía', prompt_respuesta)
 
 	def test_creator_question_uses_one_relevant_memory_and_natural_gemini_answer(self):
 		from Astrana import main as astrana
@@ -725,6 +735,45 @@ class AstranaPwaTests(TestCase):
 		self.assertIn('No pude identificar esa intención', response.json()['reply'])
 		self.assertIn('Elegí un número', response.json()['reply'])
 
+	@patch.dict('os.environ', {'ASTRANA_MEMORY_SEMANTIC_ENABLED': 'false'})
+	def test_disabled_semantic_memory_skips_model_search(self):
+		from Astrana import main as astrana
+
+		self.client.get(reverse('astrana_memoria_api'), secure=True)
+		chat_id = f'web-{self.client.session.session_key}'
+		MemoriaAstrana.objects.create(
+			chat_id=chat_id,
+			categoria='identidad',
+			clave='Definición de Astrana',
+			valor='Astrana funciona bajo Gemini.',
+			confirmada=True,
+		)
+		session = self.client.session
+		session['astrana_aprendizaje_pendiente'] = {
+			'etapa': 'elegir_intencion',
+			'frase': 'consulta desconocida',
+		}
+		session.save()
+
+		with (
+			patch.object(astrana, 'detectar_consulta_datos', return_value=None),
+			patch.object(astrana.nlp_engine, 'intencion_aprendida', return_value=None),
+			patch.object(
+				astrana.nlp_engine,
+				'buscar_recuerdo_semantico',
+			) as buscar_recuerdo,
+		):
+			response = self.client.post(
+				reverse('astrana_chat_api'),
+				{'message': '¿Qué hace?'},
+				secure=True,
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn('No pude identificar esa intención', response.json()['reply'])
+		buscar_recuerdo.assert_not_called()
+
+	@patch.dict('os.environ', {'ASTRANA_MEMORY_SEMANTIC_ENABLED': 'true'})
 	def test_semantic_memory_search_keeps_classifier_when_no_memory_matches(self):
 		from Astrana import main as astrana
 
@@ -738,12 +787,7 @@ class AstranaPwaTests(TestCase):
 			confirmada=True,
 		)
 		client = Mock()
-		client.models.generate_content.return_value.text = (
-			'{"memory_index": null, "answer": null}'
-		)
 		genai_types = Mock()
-		genai_types.GenerateContentConfig.return_value = Mock()
-		genai_types.HttpOptions.return_value = Mock()
 		session = self.client.session
 		session['astrana_aprendizaje_pendiente'] = {
 			'etapa': 'elegir_intencion',
@@ -756,6 +800,11 @@ class AstranaPwaTests(TestCase):
 			patch.object(astrana, 'types', genai_types),
 			patch.object(astrana, 'detectar_consulta_datos', return_value=None),
 			patch.object(astrana.nlp_engine, 'intencion_aprendida', return_value=None),
+			patch.object(
+				astrana.nlp_engine,
+				'buscar_recuerdo_semantico',
+				return_value=None,
+			) as buscar_recuerdo,
 		):
 			response = self.client.post(
 				reverse('astrana_chat_api'),
@@ -765,7 +814,8 @@ class AstranaPwaTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertIn('No pude identificar esa intención', response.json()['reply'])
-		self.assertEqual(client.models.generate_content.call_count, 1)
+		buscar_recuerdo.assert_called_once()
+		client.models.generate_content.assert_not_called()
 
 	def test_unknown_chat_question_can_resume_a_saved_project(self):
 		from Astrana import main as astrana
@@ -1022,6 +1072,80 @@ class AstranaPwaTests(TestCase):
 
 		self.assertIsNone(engine.clasificar_intencion_semantica('cuánto stock tengo'))
 		self.assertIsNone(engine._semantic_model)
+		self.assertFalse(engine.memoria_semantica_habilitada())
+		self.assertIsNone(engine.buscar_recuerdo_semantico(
+			'¿Cómo funciona?',
+			[Mock(categoria='identidad', clave='Identidad', valor='Astrana asistente.')],
+		))
+
+	@patch.dict('os.environ', {'ASTRANA_MEMORY_SEMANTIC_ENABLED': 'true'})
+	def test_local_memory_semantic_search_can_be_enabled_with_environment(self):
+		from Astrana.nlp_engine import NLPEngine
+
+		engine = NLPEngine()
+
+		self.assertTrue(engine.memoria_semantica_habilitada())
+
+	@patch.dict('os.environ', {'ASTRANA_MEMORY_SEMANTIC_ENABLED': 'true'})
+	def test_local_memory_semantic_search_uses_threshold_margin_and_cached_vectors(self):
+		import numpy as np
+		from types import SimpleNamespace
+		from Astrana.nlp_engine import NLPEngine
+
+		class ModeloFalso:
+			def __init__(self):
+				self.codificaciones_documentos = 0
+
+			def encode(self, textos, **kwargs):
+				if all(
+					texto.startswith(('identidad.', 'interes.'))
+					for texto in textos
+				):
+					self.codificaciones_documentos += 1
+					vectores = np.array([[1.0, 0.0], [0.0, 1.0]])
+					return vectores[:len(textos)]
+				if textos == ['consulta_clara']:
+					return np.array([[0.8, 0.6]])
+				if textos == ['consulta_debil']:
+					return np.array([[0.22, 0.9755]])
+				return np.array([[0.72, 0.693974]])
+
+		engine = NLPEngine()
+		modelo = ModeloFalso()
+		engine._semantic_model = modelo
+		recuerdos = [
+			SimpleNamespace(
+				categoria='identidad',
+				clave='Definición de Astrana',
+				valor='Asistente virtual con IA.',
+			),
+			SimpleNamespace(
+				categoria='interes',
+				clave='Intereses',
+				valor='Me interesa la astronomía.',
+			),
+		]
+
+		resultado_claro = engine.buscar_recuerdo_semantico(
+			'consulta_clara',
+			recuerdos,
+		)
+		resultado_ambiguo = engine.buscar_recuerdo_semantico(
+			'consulta_ambigua',
+			recuerdos,
+		)
+
+		self.assertEqual(resultado_claro, (0, 0.8))
+		self.assertIsNone(resultado_ambiguo)
+		self.assertEqual(modelo.codificaciones_documentos, 1)
+
+		recuerdo_unico = recuerdos[:1]
+		engine._memory_semantic_vectors.clear()
+		resultado_debil = engine.buscar_recuerdo_semantico(
+			'consulta_debil',
+			recuerdo_unico,
+		)
+		self.assertIsNone(resultado_debil)
 
 	@patch.dict('os.environ', {'ASTRANA_SEMANTIC_SHADOW': '1'})
 	@patch('Astrana.nlp_engine.nlp_engine.clasificar_intencion_semantica')
